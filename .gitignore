@@ -1,0 +1,12 @@
+# lib-play
+node_modules/
+.next/
+out/
+build/
+prisma/dev.db
+prisma/dev.db-journal
+.env.local
+.env
+public/uploads/
+*.log
+tsbuildinfo
