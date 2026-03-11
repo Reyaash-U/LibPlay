@@ -19,9 +19,15 @@ export async function GET() {
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "";
 
     // Find all media records that still use the old relative /uploads/ URL
+    // OR records that accidentally got the full ngrok URL (we want them relative now)
     const oldRecords = await db
       .collection("media")
-      .find({ url: { $regex: /^\/uploads\// } })
+      .find({
+        $or: [
+          { url: { $regex: /^\/uploads\// } },
+          { url: { $regex: /^https?:\/\/.*ngrok.*\// } }
+        ]
+      })
       .toArray();
 
     if (oldRecords.length === 0) {
@@ -59,8 +65,8 @@ export async function GET() {
         }
         // (If the file doesn't exist on disk, we still update the URL in DB)
 
-        // Build the new proxy URL
-        const newUrl = `${baseUrl}/api/media/stream?filename=${safeFilename}`;
+        // Build the new proxy URL (Always relative so Vercel proxies it and bypasses ngrok warnings)
+        const newUrl = `/api/media/stream?filename=${safeFilename}`;
 
         // Update MongoDB record
         await db.collection("media").updateOne(

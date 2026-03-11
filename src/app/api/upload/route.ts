@@ -29,81 +29,105 @@ export async function POST(request: NextRequest) {
     const eventName = formData.get("eventName") as string | null;
     const eventDate = formData.get("eventDate") as string | null;
 
-    if (!file || !title) {
+    // If directFilename is provided, it means the browser already uploaded 
+    // the heavy file directly to the college server. We just need to save metadata.
+    const directFilename = formData.get("directFilename") as string | null;
+
+    if (!file && !directFilename) {
       return NextResponse.json(
         { success: false, error: "File and title are required" },
         { status: 400 }
       );
     }
 
-    const isVideo = file.type.startsWith("video/");
-    const isImage = file.type.startsWith("image/");
+    if (file) {
+      const isVideo = file.type.startsWith("video/");
+      const isImage = file.type.startsWith("image/");
 
-    if (!isVideo && !isImage) {
-      return NextResponse.json(
-        { success: false, error: "Only image and video files are allowed" },
-        { status: 400 }
-      );
+      if (!isVideo && !isImage) {
+        return NextResponse.json(
+          { success: false, error: "Only image and video files are allowed" },
+          { status: 400 }
+        );
+      }
+
+      if (file.size > 1024 * 1024 * 1024) { // 1GB limit check is still good here
+        return NextResponse.json(
+          { success: false, error: "File size must be under 1GB" },
+          { status: 400 }
+        );
+      }
     }
 
-    if (file.size > 1024 * 1024 * 1024) {
-      return NextResponse.json(
-        { success: false, error: "File size must be under 1GB" },
-        { status: 400 }
-      );
-    }
-
-    // Generate unique filename
-    const uniqueId = crypto.randomUUID();
-    const extension = file.name.split(".").pop() || (isVideo ? "mp4" : "jpg");
-    const filename = `${uniqueId}.${extension}`;
-
-    const arrayBuffer = await file.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
+    // Generate unique filename if we are handling the file here
+    let filename = "";
+    let fileUrl = "";
+    let finalVideoType = false;
+    let finalFileSize = 0;
+    let finalOriginalName = "direct-upload";
+    let finalMimeType = "application/octet-stream";
 
     // ────────────────────────────────────────────────────────────────
     //  STORAGE ROUTING
-    //  - On Vercel:         STORAGE_SERVER_URL is set → forward to college server
-    //  - On college server: STORAGE_SERVER_URL is NOT set → save to local disk
     // ────────────────────────────────────────────────────────────────
-    const storageServerUrl = process.env.STORAGE_SERVER_URL;
-    const storageSecret = process.env.STORAGE_SECRET;
-    let fileUrl: string;
+    if (directFilename) {
+      // ── DIRECT UPLOAD HANDLING ── 
+      // The browser already sent the heavy file directly to the college server.
+      // We just need to generate the URL relative proxy link.
+      filename = directFilename;
+      fileUrl = `/api/media/stream?filename=${filename}`;
+      finalVideoType = filename.endsWith(".mp4") || filename.endsWith(".webm") || filename.endsWith(".mov");
+      
+    } else if (file) {
+      // ── STANDARD HANDLING ──
+      const isVideo = file.type.startsWith("video/");
+      finalVideoType = isVideo;
+      finalFileSize = file.size;
+      finalOriginalName = file.name;
+      finalMimeType = file.type;
 
-    if (storageServerUrl && storageSecret) {
-      // ── VERCEL MODE ── forward file to the college storage server ──
-      const forwardForm = new FormData();
-      forwardForm.append("filename", filename); // pre-determined filename
-      forwardForm.append(
-        "file",
-        new Blob([buffer], { type: file.type }),
-        filename
-      );
+      const uniqueId = crypto.randomUUID();
+      const extension = file.name.split(".").pop() || (isVideo ? "mp4" : "jpg");
+      filename = `${uniqueId}.${extension}`;
 
-      const response = await fetch(`${storageServerUrl}/api/storage/accept`, {
-        method: "POST",
-        headers: { "X-Storage-Secret": storageSecret },
-        body: forwardForm,
-      });
+      const arrayBuffer = await file.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
 
-      if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(`College storage server rejected the file: ${errText}`);
+      const storageServerUrl = process.env.STORAGE_SERVER_URL;
+      const storageSecret = process.env.STORAGE_SECRET;
+
+      if (storageServerUrl && storageSecret) {
+        // ── VERCEL MODE ── forward file to the college storage server ──
+        const forwardForm = new FormData();
+        forwardForm.append("filename", filename);
+        forwardForm.append(
+          "file",
+          new Blob([buffer], { type: file.type }),
+          filename
+        );
+
+        const response = await fetch(`${storageServerUrl}/api/storage/accept`, {
+          method: "POST",
+          headers: { "X-Storage-Secret": storageSecret },
+          body: forwardForm,
+        });
+
+        if (!response.ok) {
+          const errText = await response.text();
+          throw new Error(`College storage server rejected the file: ${errText}`);
+        }
+      } else {
+        // ── COLLEGE SERVER MODE ── save directly to private local storage ──
+        const uploadsDir = path.join(process.cwd(), "storage", "uploads");
+        if (!existsSync(uploadsDir)) {
+          await fs.mkdir(uploadsDir, { recursive: true });
+        }
+        const filePath = path.join(uploadsDir, filename);
+        await fs.writeFile(filePath, buffer);
       }
 
-      // File lives on the college server — stream URL points there
-      fileUrl = `${storageServerUrl}/api/media/stream?filename=${filename}`;
-    } else {
-      // ── COLLEGE SERVER MODE ── save directly to private local storage ──
-      const uploadsDir = path.join(process.cwd(), "storage", "uploads");
-      if (!existsSync(uploadsDir)) {
-        await fs.mkdir(uploadsDir, { recursive: true });
-      }
-      const filePath = path.join(uploadsDir, filename);
-      await fs.writeFile(filePath, buffer);
-
-      const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "";
-      fileUrl = `${baseUrl}/api/media/stream?filename=${filename}`;
+      // Always store the relative URL so the frontend requests it from itself 
+      fileUrl = `/api/media/stream?filename=${filename}`;
     }
 
     // Save metadata + file URL to MongoDB
@@ -112,17 +136,17 @@ export async function POST(request: NextRequest) {
     const newMediaDoc = {
       title,
       description: description || null,
-      type: isVideo ? "VIDEO" : "PHOTO",
+      type: finalVideoType ? "VIDEO" : "PHOTO",
       url: fileUrl,
       thumbnailUrl: null,
       publicId: filename,
       status: user.role === "LIBRARIAN" ? "APPROVED" : "PENDING",
       eventName: eventName || null,
       eventDate: eventDate || null,
-      fileSize: file.size,
+      fileSize: finalFileSize,
       duration: null,
-      originalFilename: file.name,
-      mimeType: file.type,
+      originalFilename: finalOriginalName,
+      mimeType: finalMimeType,
       userId: user.userId,
       createdAt: new Date(),
       updatedAt: new Date(),

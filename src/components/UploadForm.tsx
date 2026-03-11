@@ -87,10 +87,60 @@ export default function UploadForm({ onUploadSuccess }: UploadFormProps) {
         setProgress((prev) => Math.min(prev + 5, 90));
       }, 500);
 
-      const res = await fetch("/api/upload", {
-        method: "POST",
-        body: formData,
-      });
+      // -------------------------------------------------------------
+      // DIRECT UPLOAD LOGIC
+      // If we are on Vercel, send the heavy file directly to the
+      // college server (ngrok) bypassing Vercel's 4.5MB limits.
+      // -------------------------------------------------------------
+      const storageServerUrl = process.env.NEXT_PUBLIC_STORAGE_SERVER_URL;
+      let res: Response;
+      
+      if (storageServerUrl) {
+        // 1. Send the actual file to the storage server directly
+        const fileForm = new FormData();
+        fileForm.append("file", file);
+        
+        try {
+          const directUploadRes = await fetch(`${storageServerUrl}/api/storage/accept`, {
+            method: "POST",
+            body: fileForm,
+            // We can't use the secret directly from frontend for security, 
+            // so we rely on the college server accepting public uploads temporarily 
+            // (or ideally protected by next-auth session cookies if they share domains)
+            headers: {
+              "X-Direct-Upload": "true"
+            }
+          });
+          
+          if (!directUploadRes.ok) throw new Error("Storage server rejected file");
+          const directData = await directUploadRes.json();
+          
+          if (!directData.success || !directData.filename) {
+            throw new Error("Storage server failed to save file");
+          }
+          
+          // 2. Tell Vercel to just save the metadata
+          formData.delete("file"); // Remove the heavy file
+          formData.append("directFilename", directData.filename); // Just send the filename
+          
+          res = await fetch("/api/upload", {
+            method: "POST",
+            body: formData,
+          });
+          
+        } catch (directErr) {
+          console.error("Direct upload failed", directErr);
+          throw new Error("Failed to upload huge file to storage server directly.");
+        }
+      } else {
+        // -------------------------------------------------------------
+        // STANDARD UPLOAD LOGIC (Local / Same Server)
+        // -------------------------------------------------------------
+        res = await fetch("/api/upload", {
+          method: "POST",
+          body: formData,
+        });
+      }
 
       clearInterval(progressInterval);
       setProgress(100);
