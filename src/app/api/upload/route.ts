@@ -46,7 +46,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 1 GB limit
     if (file.size > 1024 * 1024 * 1024) {
       return NextResponse.json(
         { success: false, error: "File size must be under 1GB" },
@@ -54,25 +53,60 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Generate a unique filename
+    // Generate unique filename
     const uniqueId = crypto.randomUUID();
     const extension = file.name.split(".").pop() || (isVideo ? "mp4" : "jpg");
     const filename = `${uniqueId}.${extension}`;
 
-    // Save file to public/uploads/ so Next.js serves it as a static file
-    const uploadsDir = path.join(process.cwd(), "public", "uploads");
-    if (!existsSync(uploadsDir)) {
-      await fs.mkdir(uploadsDir, { recursive: true });
-    }
-    const filePath = path.join(uploadsDir, filename);
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
-    await fs.writeFile(filePath, buffer);
 
-    // URL served directly by Next.js static file serving
-    const fileUrl = `/uploads/${filename}`;
+    // ────────────────────────────────────────────────────────────────
+    //  STORAGE ROUTING
+    //  - On Vercel:         STORAGE_SERVER_URL is set → forward to college server
+    //  - On college server: STORAGE_SERVER_URL is NOT set → save to local disk
+    // ────────────────────────────────────────────────────────────────
+    const storageServerUrl = process.env.STORAGE_SERVER_URL;
+    const storageSecret = process.env.STORAGE_SECRET;
+    let fileUrl: string;
 
-    // Save metadata to MongoDB
+    if (storageServerUrl && storageSecret) {
+      // ── VERCEL MODE ── forward file to the college storage server ──
+      const forwardForm = new FormData();
+      forwardForm.append("filename", filename); // pre-determined filename
+      forwardForm.append(
+        "file",
+        new Blob([buffer], { type: file.type }),
+        filename
+      );
+
+      const response = await fetch(`${storageServerUrl}/api/storage/accept`, {
+        method: "POST",
+        headers: { "X-Storage-Secret": storageSecret },
+        body: forwardForm,
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`College storage server rejected the file: ${errText}`);
+      }
+
+      // File lives on the college server — stream URL points there
+      fileUrl = `${storageServerUrl}/api/media/stream?filename=${filename}`;
+    } else {
+      // ── COLLEGE SERVER MODE ── save directly to private local storage ──
+      const uploadsDir = path.join(process.cwd(), "storage", "uploads");
+      if (!existsSync(uploadsDir)) {
+        await fs.mkdir(uploadsDir, { recursive: true });
+      }
+      const filePath = path.join(uploadsDir, filename);
+      await fs.writeFile(filePath, buffer);
+
+      const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "";
+      fileUrl = `${baseUrl}/api/media/stream?filename=${filename}`;
+    }
+
+    // Save metadata + file URL to MongoDB
     const db = await getDb();
 
     const newMediaDoc = {
@@ -112,9 +146,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       data: media,
-      message: user.role === "LIBRARIAN"
-        ? "Media uploaded and approved successfully."
-        : "Media uploaded successfully. Waiting for librarian approval.",
+      message:
+        user.role === "LIBRARIAN"
+          ? "Media uploaded and approved successfully."
+          : "Media uploaded successfully. Waiting for librarian approval.",
     });
   } catch (error) {
     console.error("Upload error:", error);

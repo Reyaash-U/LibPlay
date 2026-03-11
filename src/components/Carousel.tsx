@@ -12,10 +12,9 @@ interface CarouselProps {
 }
 
 export default function Carousel({ media, onDelete }: CarouselProps) {
-  const autoplayPlugin = useRef(
+  const [emblaRef, emblaApi] = useEmblaCarousel({ loop: true }, [
     Autoplay({ delay: 5000, stopOnInteraction: false })
-  );
-  const [emblaRef, emblaApi] = useEmblaCarousel({ loop: true }, [autoplayPlugin.current]);
+  ]);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isMuted, setIsMuted] = useState(true);
@@ -50,17 +49,26 @@ export default function Carousel({ media, onDelete }: CarouselProps) {
 
     // If the current slide is a video, pause autoplay and play the video
     const currentMedia = media[index];
+    const autoplay = emblaApi.plugins()?.autoplay;
+
     if (currentMedia?.type === "VIDEO") {
-      autoplayPlugin.current.stop();
+      if (autoplay && typeof autoplay.stop === "function") {
+        autoplay.stop();
+      }
       const videoEl = videoRefs.current.get(currentMedia.id);
       if (videoEl && videoEl.paused) {
         videoEl.play().catch(() => { });
       }
     } else {
       // For images, make sure autoplay is running
-      autoplayPlugin.current.play();
-      // Restart the timer so it gets a full 5 seconds
-      autoplayPlugin.current.reset();
+      if (autoplay) {
+        try {
+          if (typeof autoplay.play === "function") autoplay.play();
+          if (typeof autoplay.reset === "function") autoplay.reset();
+        } catch (e) {
+          console.warn("Autoplay interaction failed", e);
+        }
+      }
     }
   }, [emblaApi, media]);
 
@@ -105,11 +113,9 @@ export default function Carousel({ media, onDelete }: CarouselProps) {
       if (!emblaApi) return;
       const index = emblaApi.selectedScrollSnap();
       if (media[index]?.type === "VIDEO") {
-        const autoplay = emblaApi.plugins().autoplay;
+        const autoplay = emblaApi.plugins()?.autoplay;
         if (autoplay && typeof autoplay.stop === "function") {
           autoplay.stop();
-        } else if (autoplayPlugin.current && typeof autoplayPlugin.current.stop === "function") {
-          autoplayPlugin.current.stop();
         }
       }
     }, 500);

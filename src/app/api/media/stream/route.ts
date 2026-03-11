@@ -17,6 +17,8 @@ function iteratorToStream(iterator: any) {
   });
 }
 
+// Proxy route: serves media from private storage/uploads/ directory.
+// Files are NOT accessible directly from the web — they only come through here.
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -26,19 +28,38 @@ export async function GET(request: NextRequest) {
       return new NextResponse("Filename is required", { status: 400 });
     }
 
-    // Security check: Ensure filename is just a basename to prevent directory traversal
+    // Security: strip any path traversal attempts (e.g. ../../etc/passwd)
     const safeFilename = path.basename(filename);
-    const filePath = path.join(process.cwd(), "public", "uploads", safeFilename);
+
+    // Serve from private storage/uploads/ — NOT the public folder
+    const filePath = path.join(process.cwd(), "storage", "uploads", safeFilename);
 
     if (!fs.existsSync(filePath)) {
       return new NextResponse("File not found", { status: 404 });
     }
+
+    // Detect MIME type by file extension
+    const ext = safeFilename.split(".").pop()?.toLowerCase() || "";
+    const mimeTypes: Record<string, string> = {
+      mp4: "video/mp4",
+      webm: "video/webm",
+      ogg: "video/ogg",
+      mov: "video/quicktime",
+      jpg: "image/jpeg",
+      jpeg: "image/jpeg",
+      png: "image/png",
+      gif: "image/gif",
+      webp: "image/webp",
+      avif: "image/avif",
+    };
+    const contentType = mimeTypes[ext] || "application/octet-stream";
 
     const stats = fs.statSync(filePath);
     const fileSize = stats.size;
     const range = request.headers.get("range");
 
     if (range) {
+      // Partial content — allows seeking in videos
       const parts = range.replace(/bytes=/, "").split("-");
       const start = parseInt(parts[0], 10);
       const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
@@ -56,29 +77,27 @@ export async function GET(request: NextRequest) {
       const file = fs.createReadStream(filePath, { start, end });
       const stream = iteratorToStream(file[Symbol.asyncIterator]());
 
-      const head = {
-        "Content-Range": `bytes ${start}-${end}/${fileSize}`,
-        "Accept-Ranges": "bytes",
-        "Content-Length": chunksize.toString(),
-        "Content-Type": "video/mp4",
-      };
-
       return new NextResponse(stream, {
         status: 206,
-        headers: head,
+        headers: {
+          "Content-Range": `bytes ${start}-${end}/${fileSize}`,
+          "Accept-Ranges": "bytes",
+          "Content-Length": chunksize.toString(),
+          "Content-Type": contentType,
+        },
       });
     } else {
-      const head = {
-        "Content-Length": fileSize.toString(),
-        "Content-Type": "video/mp4",
-      };
-
+      // Full file
       const file = fs.createReadStream(filePath);
       const stream = iteratorToStream(file[Symbol.asyncIterator]());
 
       return new NextResponse(stream, {
         status: 200,
-        headers: head,
+        headers: {
+          "Content-Length": fileSize.toString(),
+          "Content-Type": contentType,
+          "Accept-Ranges": "bytes",
+        },
       });
     }
   } catch (error) {

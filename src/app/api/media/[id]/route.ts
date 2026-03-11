@@ -108,12 +108,15 @@ export async function DELETE(
       );
     }
 
-    // Delete physical file from public/uploads/ if it exists
+    // Delete physical file — check private storage first, then legacy public/uploads/
     if (media.publicId) {
       const safeFilename = path.basename(media.publicId as string);
-      const filePath = path.join(process.cwd(), "public", "uploads", safeFilename);
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
+      const privateFilePath = path.join(process.cwd(), "storage", "uploads", safeFilename);
+      const publicFilePath = path.join(process.cwd(), "public", "uploads", safeFilename);
+      if (fs.existsSync(privateFilePath)) {
+        fs.unlinkSync(privateFilePath);
+      } else if (fs.existsSync(publicFilePath)) {
+        fs.unlinkSync(publicFilePath);
       }
     }
 

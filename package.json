@@ -4,8 +4,10 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:80": "next dev -p 80",
     "build": "next build",
     "start": "next start",
+    "start:80": "next start -p 80",
     "lint": "next lint",
     "db:seed": "curl http://localhost:3000/api/seed"
   },
