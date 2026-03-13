@@ -18,8 +18,8 @@
   }
 
   ::selection {
-    background: rgba(59, 130, 246, 0.2);
-    color: #1e3a8a;
+    background: rgba(115, 149, 125, 0.2);
+    color: #344139;
   }
 }
 
@@ -36,7 +36,7 @@
 
   /* Gradient text */
   .text-gradient {
-    @apply bg-clip-text text-transparent bg-gradient-to-r from-primary-600 via-primary-500 to-accent-500;
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-primary-600 via-primary-500 to-primary-400;
   }
 
   /* Hero gradient background */
@@ -64,7 +64,7 @@
 
   /* Button styles */
   .btn-primary {
-    @apply px-5 py-2.5 bg-gradient-to-r from-primary-600 to-primary-500 text-white rounded-xl font-semibold hover:from-primary-500 hover:to-primary-400 active:from-primary-700 active:to-primary-600 shadow-[0_4px_14px_0_#3b82f663] hover:shadow-[0_6px_20px_#3b82f63b] hover:-translate-y-0.5 transition-all duration-300 transform;
+    @apply px-5 py-2.5 bg-gradient-to-r from-primary-600 to-primary-500 text-white rounded-xl font-semibold hover:from-primary-500 hover:to-primary-400 active:from-primary-700 active:to-primary-600 shadow-[0_4px_14px_0_#73957D63] hover:shadow-[0_6px_20px_#73957D3b] hover:-translate-y-0.5 transition-all duration-300 transform;
   }
 
   .btn-ghost {

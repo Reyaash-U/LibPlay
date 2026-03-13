@@ -106,33 +106,35 @@ export default function StaffPage() {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-8">
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
-          <div className="bg-white border border-gray-100 shadow-md shadow-gray-200/50 rounded-2xl p-5 flex items-center gap-4 hover:shadow-lg transition-shadow duration-300 group border-l-4 border-l-amber-500">
-            <div className="w-12 h-12 rounded-xl bg-amber-50 flex items-center justify-center group-hover:bg-amber-100 transition-colors">
-              <Clock className="w-6 h-6 text-amber-600" />
-            </div>
-            <div>
-              <p className="text-3xl font-extrabold text-gray-800 leading-none">{stats.pending}</p>
-              <p className="text-xs font-semibold text-gray-400 mt-1 uppercase tracking-wider">Pending</p>
-            </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+          {/* Pending Card */}
+          <div className="bg-white border border-gray-100 shadow-sm rounded-2xl p-6 transition-all duration-300 hover:shadow-md hover:border-amber-100 group">
+            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-4">Pending Review</p>
+            <p className="text-4xl font-black text-gray-900 mb-4">{stats.pending}</p>
+            <p className="text-[10px] font-bold text-amber-500 uppercase tracking-widest flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+              Awaiting Approval
+            </p>
           </div>
-          <div className="bg-white border border-gray-100 shadow-md shadow-gray-200/50 rounded-2xl p-5 flex items-center gap-4 hover:shadow-lg transition-shadow duration-300 group border-l-4 border-l-emerald-500">
-            <div className="w-12 h-12 rounded-xl bg-emerald-50 flex items-center justify-center group-hover:bg-emerald-100 transition-colors">
-              <CheckCircle className="w-6 h-6 text-emerald-600" />
-            </div>
-            <div>
-              <p className="text-3xl font-extrabold text-gray-800 leading-none">{stats.approved}</p>
-              <p className="text-xs font-semibold text-gray-400 mt-1 uppercase tracking-wider">Approved</p>
-            </div>
+
+          {/* Approved Card */}
+          <div className="bg-white border border-gray-100 shadow-sm rounded-2xl p-6 transition-all duration-300 hover:shadow-md hover:border-emerald-100 group">
+            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-4">Approved Media</p>
+            <p className="text-4xl font-black text-gray-900 mb-4">{stats.approved}</p>
+            <p className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+              Publicly Visible
+            </p>
           </div>
-          <div className="bg-white border border-gray-100 shadow-md shadow-gray-200/50 rounded-2xl p-5 flex items-center gap-4 hover:shadow-lg transition-shadow duration-300 group border-l-4 border-l-rose-500">
-            <div className="w-12 h-12 rounded-xl bg-rose-50 flex items-center justify-center group-hover:bg-rose-100 transition-colors">
-              <XCircle className="w-6 h-6 text-rose-600" />
-            </div>
-            <div>
-              <p className="text-3xl font-extrabold text-gray-800 leading-none">{stats.rejected}</p>
-              <p className="text-xs font-semibold text-gray-400 mt-1 uppercase tracking-wider">Rejected</p>
-            </div>
+
+          {/* Rejected Card */}
+          <div className="bg-white border border-gray-100 shadow-sm rounded-2xl p-6 transition-all duration-300 hover:shadow-md hover:border-rose-100 group">
+            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-4">Rejected Media</p>
+            <p className="text-4xl font-black text-gray-900 mb-4">{stats.rejected}</p>
+            <p className="text-[10px] font-bold text-rose-500 uppercase tracking-widest flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+              Needs Attention
+            </p>
           </div>
         </div>
       </div>
