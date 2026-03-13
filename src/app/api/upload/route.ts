@@ -68,42 +68,55 @@ export async function POST(request: NextRequest) {
     // ────────────────────────────────────────────────────────────────
     const storageServerUrl = process.env.STORAGE_SERVER_URL;
     const storageSecret = process.env.STORAGE_SECRET;
-    let fileUrl: string;
+    const isVercel = process.env.VERCEL === "1";
+    let fileUrl: string = "";
 
-    if (storageServerUrl && storageSecret) {
-      // ── VERCEL MODE ── forward file to the college storage server ──
-      const forwardForm = new FormData();
-      forwardForm.append("filename", filename); // pre-determined filename
-      forwardForm.append(
-        "file",
-        new Blob([buffer], { type: file.type }),
-        filename
-      );
-
-      const response = await fetch(`${storageServerUrl}/api/storage/accept`, {
-        method: "POST",
-        headers: { "X-Storage-Secret": storageSecret },
-        body: forwardForm,
-      });
-
-      if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(`College storage server rejected the file: ${errText}`);
-      }
-
-      // File lives on the college server — stream URL points there
-      fileUrl = `${storageServerUrl}/api/media/stream?filename=${filename}`;
-    } else {
-      // ── COLLEGE SERVER MODE ── save directly to private local storage ──
+    // ── 1. Save directly to private local storage (if not on Vercel) ──
+    if (!isVercel) {
       const uploadsDir = path.join(process.cwd(), "storage", "uploads");
       if (!existsSync(uploadsDir)) {
         await fs.mkdir(uploadsDir, { recursive: true });
       }
       const filePath = path.join(uploadsDir, filename);
       await fs.writeFile(filePath, buffer);
-
+      
       const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "";
       fileUrl = `${baseUrl}/api/media/stream?filename=${filename}`;
+    }
+
+    // ── 2. Forward file to the central remote server ──
+    if (storageServerUrl && storageSecret) {
+      try {
+        const forwardForm = new FormData();
+        forwardForm.append("filename", filename);
+        forwardForm.append(
+          "file",
+          new Blob([buffer], { type: file.type }),
+          filename
+        );
+
+        const response = await fetch(`${storageServerUrl}/api/storage/accept`, {
+          method: "POST",
+          headers: { "X-Storage-Secret": storageSecret },
+          body: forwardForm,
+        });
+
+        if (!response.ok) {
+          const errText = await response.text();
+          console.error("Storage server rejected the file:", errText);
+          if (isVercel) throw new Error(`College storage server rejected the file. ${errText}`);
+        }
+      } catch (err) {
+        console.error("Storage forwarding error:", err);
+        if (isVercel) throw new Error("Failed to reach college storage server. Is it online?");
+      }
+
+      // If on Vercel, the file ONLY lives on the remote server
+      if (isVercel) {
+        fileUrl = `${storageServerUrl}/api/media/stream?filename=${filename}`;
+      }
+    } else if (isVercel) {
+      throw new Error("STORAGE_SERVER_URL is not configured. Cannot save file.");
     }
 
     // Save metadata + file URL to MongoDB
