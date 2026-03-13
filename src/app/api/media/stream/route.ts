@@ -18,7 +18,8 @@ function iteratorToStream(iterator: any) {
 }
 
 // Proxy route: serves media from private storage/uploads/ directory.
-// Files are NOT accessible directly from the web — they only come through here.
+// Only used when the app is running directly ON the college server (no STORAGE_SERVER_URL).
+// When on Vercel, media is served directly from the college server via full URL stored in MongoDB.
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -31,53 +32,7 @@ export async function GET(request: NextRequest) {
     // Security: strip any path traversal attempts (e.g. ../../etc/passwd)
     const safeFilename = path.basename(filename);
 
-    const storageServerUrl = process.env.STORAGE_SERVER_URL;
-    const storageSecret = process.env.STORAGE_SECRET;
-
-    // ────────────────────────────────────────────────────────────────
-    // PROXY MODE (Vercel)
-    // If we're on Vercel, forward the request to the college server
-    // and attach the ngrok-skip header so images don't get blocked
-    // ────────────────────────────────────────────────────────────────
-    if (storageServerUrl && storageSecret) {
-      const fetchUrl = `${storageServerUrl}/api/media/stream?filename=${safeFilename}`;
-      
-      // We must pass the correct headers specifically to make ngrok bypass
-      const proxyReqHeaders = new Headers();
-      proxyReqHeaders.set("ngrok-skip-browser-warning", "1");
-      
-      const range = request.headers.get("range");
-      if (range) proxyReqHeaders.set("Range", range);
-
-      const proxyRes = await fetch(fetchUrl, {
-        method: "GET",
-        headers: proxyReqHeaders,
-        // Optional: prevent Next.js from aggressively caching the stream
-        cache: "no-store" 
-      });
-      
-      if (!proxyRes.ok) {
-        console.error(`Proxy stream failed with status ${proxyRes.status}`);
-        return new NextResponse("Failed to proxy media from college server", { status: proxyRes.status });
-      }
-
-      // Create a response using the exact Web Stream returned by fetch
-      return new NextResponse(proxyRes.body, {
-        status: proxyRes.status,
-        headers: {
-          "Content-Type": proxyRes.headers.get("Content-Type") || "application/octet-stream",
-          "Content-Length": proxyRes.headers.get("Content-Length") || "",
-          "Content-Range": proxyRes.headers.get("Content-Range") || "",
-          "Accept-Ranges": proxyRes.headers.get("Accept-Ranges") || "bytes",
-          "Cache-Control": "public, max-age=31536000, immutable",
-        }
-      });
-    }
-
-    // ────────────────────────────────────────────────────────────────
-    // LOCAL/COLLEGE SERVER MODE
     // Serve from private storage/uploads/ — NOT the public folder
-    // ────────────────────────────────────────────────────────────────
     const filePath = path.join(process.cwd(), "storage", "uploads", safeFilename);
 
     if (!fs.existsSync(filePath)) {
@@ -130,6 +85,7 @@ export async function GET(request: NextRequest) {
           "Accept-Ranges": "bytes",
           "Content-Length": chunksize.toString(),
           "Content-Type": contentType,
+          "Access-Control-Allow-Origin": "*",
         },
       });
     } else {
@@ -143,6 +99,7 @@ export async function GET(request: NextRequest) {
           "Content-Length": fileSize.toString(),
           "Content-Type": contentType,
           "Accept-Ranges": "bytes",
+          "Access-Control-Allow-Origin": "*",
         },
       });
     }

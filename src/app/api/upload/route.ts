@@ -70,12 +70,16 @@ export async function POST(request: NextRequest) {
     // ────────────────────────────────────────────────────────────────
     //  STORAGE ROUTING
     // ────────────────────────────────────────────────────────────────
+    const storageServerUrl = process.env.STORAGE_SERVER_URL;
+
     if (directFilename) {
       // ── DIRECT UPLOAD HANDLING ── 
-      // The browser already sent the heavy file directly to the college server.
-      // We just need to generate the URL relative proxy link.
+      // The browser already sent the file directly to the college server.
+      // Store the absolute URL so the browser can fetch it directly (no proxy).
       filename = directFilename;
-      fileUrl = `/api/media/stream?filename=${filename}`;
+      // Direct URL to college server — ngrok-skip-browser-warning bypasses the ngrok interstitial page
+      const base = storageServerUrl || "";
+      fileUrl = `${base}/api/media/stream?filename=${filename}&ngrok-skip-browser-warning=1`;
       finalVideoType = filename.endsWith(".mp4") || filename.endsWith(".webm") || filename.endsWith(".mov");
       
     } else if (file) {
@@ -93,7 +97,6 @@ export async function POST(request: NextRequest) {
       const arrayBuffer = await file.arrayBuffer();
       const buffer = Buffer.from(arrayBuffer);
 
-      const storageServerUrl = process.env.STORAGE_SERVER_URL;
       const storageSecret = process.env.STORAGE_SECRET;
 
       if (storageServerUrl && storageSecret) {
@@ -116,6 +119,8 @@ export async function POST(request: NextRequest) {
           const errText = await response.text();
           throw new Error(`College storage server rejected the file: ${errText}`);
         }
+        // Store the FULL college server URL so browser can fetch it directly (no proxy needed)
+        fileUrl = `${storageServerUrl}/api/media/stream?filename=${filename}&ngrok-skip-browser-warning=1`;
       } else {
         // ── COLLEGE SERVER MODE ── save directly to private local storage ──
         const uploadsDir = path.join(process.cwd(), "storage", "uploads");
@@ -124,10 +129,9 @@ export async function POST(request: NextRequest) {
         }
         const filePath = path.join(uploadsDir, filename);
         await fs.writeFile(filePath, buffer);
+        // On the college server itself, use a relative URL
+        fileUrl = `/api/media/stream?filename=${filename}`;
       }
-
-      // Always store the relative URL so the frontend requests it from itself 
-      fileUrl = `/api/media/stream?filename=${filename}`;
     }
 
     // Save metadata + file URL to MongoDB

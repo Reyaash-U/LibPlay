@@ -65,8 +65,10 @@ export async function GET() {
         }
         // (If the file doesn't exist on disk, we still update the URL in DB)
 
-        // Build the new proxy URL (Always relative so Vercel proxies it and bypasses ngrok warnings)
-        const newUrl = `/api/media/stream?filename=${safeFilename}`;
+        // Build the new URL pointing directly to the college server endpoint.
+        // The ngrok-skip-browser-warning query param bypasses the ngrok interstitial page
+        // so images can be fetched directly from the college server.
+        const newUrl = `${baseUrl}/api/media/stream?filename=${safeFilename}&ngrok-skip-browser-warning=1`;
 
         // Update MongoDB record
         await db.collection("media").updateOne(

@@ -101,12 +101,9 @@ export default function UploadForm({ onUploadSuccess }: UploadFormProps) {
         fileForm.append("file", file);
         
         try {
-          const directUploadRes = await fetch(`${storageServerUrl}/api/storage/accept`, {
+          const directUploadRes = await fetch(`${storageServerUrl}/api/storage/accept?ngrok-skip-browser-warning=1`, {
             method: "POST",
             body: fileForm,
-            // We can't use the secret directly from frontend for security, 
-            // so we rely on the college server accepting public uploads temporarily 
-            // (or ideally protected by next-auth session cookies if they share domains)
             headers: {
               "X-Direct-Upload": "true"
             }
