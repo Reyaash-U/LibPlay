@@ -24,18 +24,25 @@ export async function POST(request: NextRequest) {
 
     const formData = await request.formData();
     const file = formData.get("file") as File | null;
-    const title = formData.get("title") as string;
+    const title = (formData.get("title") as string | null)?.trim() || "";
     const description = formData.get("description") as string | null;
     const eventName = formData.get("eventName") as string | null;
     const eventDate = formData.get("eventDate") as string | null;
 
-    // If directFilename is provided, it means the browser already uploaded 
+    // If directFilename is provided, it means the browser already uploaded
     // the heavy file directly to the college server. We just need to save metadata.
     const directFilename = formData.get("directFilename") as string | null;
 
     if (!file && !directFilename) {
       return NextResponse.json(
-        { success: false, error: "File and title are required" },
+        { success: false, error: "File is required" },
+        { status: 400 }
+      );
+    }
+
+    if (!title) {
+      return NextResponse.json(
+        { success: false, error: "Title is required" },
         { status: 400 }
       );
     }
@@ -80,7 +87,13 @@ export async function POST(request: NextRequest) {
       // Direct URL to college server — ngrok-skip-browser-warning bypasses the ngrok interstitial page
       const base = storageServerUrl || "";
       fileUrl = `${base}/api/media/stream?filename=${filename}&ngrok-skip-browser-warning=1`;
-      finalVideoType = filename.endsWith(".mp4") || filename.endsWith(".webm") || filename.endsWith(".mov");
+      const ext = filename.split(".").pop()?.toLowerCase() || "";
+      const videoExtensions = ["mp4", "webm", "mov", "mkv", "avi", "wmv", "flv"];
+      finalVideoType = videoExtensions.includes(ext);
+      // Read optional metadata the frontend passed alongside directFilename
+      finalFileSize = parseInt(formData.get("fileSize") as string) || 0;
+      finalOriginalName = (formData.get("originalFilename") as string | null) || "direct-upload";
+      finalMimeType = (formData.get("mimeType") as string | null) || "application/octet-stream";
       
     } else if (file) {
       // ── STANDARD HANDLING ──
