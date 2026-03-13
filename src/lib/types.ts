@@ -15,6 +15,8 @@ export interface MediaItem {
   eventDate: string | null;
   fileSize: number | null;
   duration: number | null;
+  originalFilename: string | null;
+  mimeType: string | null;
   userId: string;
   createdAt: string;
   updatedAt: string;

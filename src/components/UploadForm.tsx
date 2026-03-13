@@ -117,6 +117,9 @@ export default function UploadForm({ onUploadSuccess }: UploadFormProps) {
           }
           
           // 2. Tell Vercel to just save the metadata
+          formData.append("fileSize", file.size.toString());
+          formData.append("originalFilename", file.name);
+          formData.append("mimeType", file.type);
           formData.delete("file"); // Remove the heavy file
           formData.append("directFilename", directData.filename); // Just send the filename
           
@@ -147,7 +150,7 @@ export default function UploadForm({ onUploadSuccess }: UploadFormProps) {
       if (data.success) {
         setMessage({
           type: "success",
-          text: "Media uploaded! Waiting for librarian approval.",
+          text: data.message || "Media uploaded successfully.",
         });
         // Reset form
         setFile(null);
