@@ -1,36 +1,108 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import Carousel from "@/components/Carousel";
+import { useEffect, useState, useRef, useCallback } from "react";
+import DisplayCarousel from "@/components/Carousel";
 import { MediaItem } from "@/lib/types";
-import { Monitor, RefreshCw, Image, Video, Sparkles, Play } from "lucide-react";
+import { Image as ImageIcon, Video, LayoutGrid, LogOut } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useUpload } from "@/context/UploadContext";
 
 export default function DisplayPage() {
+  const [user, setUser] = useState<any>(null);
   const [media, setMedia] = useState<MediaItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"ALL" | "PHOTO" | "VIDEO">("ALL");
-  const [user, setUser] = useState<any>(null);
+  const [controlsVisible, setControlsVisible] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const router = useRouter();
+  const { lastUploadCompletedAt } = useUpload();
 
-  const checkAuth = async () => {
-    try {
-      const res = await fetch("/api/auth/me");
-      const data = await res.json();
-      if (data.success) {
-        setUser(data.data.user);
+  // Show controls briefly on mouse movement / touch
+  const showControls = useCallback(() => {
+    setControlsVisible(true);
+    if (hideTimer.current) clearTimeout(hideTimer.current);
+    hideTimer.current = setTimeout(() => setControlsVisible(false), 3000);
+  }, []);
+
+  // Fetch current user
+  useEffect(() => {
+    const fetchUser = async () => {
+      try {
+        const res = await fetch("/api/auth/me");
+        const data = await res.json();
+        if (data.success) {
+          setUser(data.data.user);
+        }
+      } catch (error) {
+        console.error("Failed to fetch user:", error);
       }
-    } catch {
-      // Not authenticated, that's fine for public display
+    };
+    fetchUser();
+  }, []);
+
+  const handleLogout = async () => {
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+      router.push("/login");
+    } catch (error) {
+      console.error("Logout failed:", error);
     }
   };
 
-  const fetchMedia = async () => {
+  useEffect(() => {
+    window.addEventListener("mousemove", showControls);
+    window.addEventListener("touchstart", showControls);
+    return () => {
+      window.removeEventListener("mousemove", showControls);
+      window.removeEventListener("touchstart", showControls);
+      if (hideTimer.current) clearTimeout(hideTimer.current);
+    };
+  }, [showControls]);
+
+  // Track fullscreen state
+  useEffect(() => {
+    const handler = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", handler);
+    // Initial check
+    setIsFullscreen(!!document.fullscreenElement);
+    return () => document.removeEventListener("fullscreenchange", handler);
+  }, []);
+
+  // Auto fullscreen on mount
+  useEffect(() => {
+    const tryFullscreen = () => {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(() => {});
+      }
+    };
+
+    // Try immediately (works if triggered by user interaction like navigation)
+    tryFullscreen();
+
+    // Fallback: request on first user interaction
+    const onInteraction = () => {
+      tryFullscreen();
+      document.removeEventListener("click", onInteraction);
+      document.removeEventListener("keydown", onInteraction);
+      document.removeEventListener("touchstart", onInteraction);
+    };
+
+    document.addEventListener("click", onInteraction);
+    document.addEventListener("keydown", onInteraction);
+    document.addEventListener("touchstart", onInteraction);
+
+    return () => {
+      document.removeEventListener("click", onInteraction);
+      document.removeEventListener("keydown", onInteraction);
+      document.removeEventListener("touchstart", onInteraction);
+    };
+  }, []);
+
+  const fetchMedia = useCallback(async () => {
     try {
       const typeParam = filter !== "ALL" ? `&type=${filter}` : "";
-      const res = await fetch(
-        `/api/media?status=APPROVED&limit=50${typeParam}`
-      );
+      const res = await fetch(`/api/media?status=APPROVED&limit=50${typeParam}`);
       const data = await res.json();
       if (data.success) {
         setMedia(data.data.media);
@@ -40,178 +112,54 @@ export default function DisplayPage() {
     } finally {
       setLoading(false);
     }
-  };
-
-
-
-  useEffect(() => {
-    checkAuth();
-  }, []);
+  }, [filter]);
 
   useEffect(() => {
     fetchMedia();
     const interval = setInterval(fetchMedia, 300000);
     return () => clearInterval(interval);
-  }, [filter]);
+  }, [fetchMedia, lastUploadCompletedAt]);
+
+  const filters = [
+    { key: "ALL" as const, label: "All", icon: <LayoutGrid className="w-3.5 h-3.5" /> },
+    { key: "PHOTO" as const, label: "Photo", icon: <ImageIcon className="w-3.5 h-3.5" /> },
+    { key: "VIDEO" as const, label: "Video", icon: <Video className="w-3.5 h-3.5" /> },
+  ];
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Hero Header */}
-      <div className="bg-gradient-to-r from-primary-600 to-primary-800 px-4 sm:px-6 lg:px-8 py-8 mb-6 text-white">
-        <div className="max-w-7xl mx-auto">
-          <div className="flex items-center gap-3 mb-4 animate-fade-in">
-            <div className="p-2.5 bg-white/20 backdrop-blur rounded-xl border border-white/20">
-              <Monitor className="w-6 h-6" />
-            </div>
-            <div className="flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-accent-300 animate-pulse-soft" />
-              <span className="text-sm font-semibold text-primary-100 uppercase tracking-widest">Live Gallery</span>
-            </div>
-          </div>
-
-          <h1 className="text-3xl font-bold text-white tracking-tight animate-fade-in" style={{ animationDelay: "0.1s" }}>
-            Library Events
-          </h1>
-          <p className="text-primary-100 text-sm mt-0.5 font-medium max-w-2xl animate-fade-in" style={{ animationDelay: "0.2s" }}>
-            Explore photos and videos from our latest library events and activities
-          </p>
-
-          {/* Filter Pills */}
-          <div className="flex flex-wrap items-center gap-3 mt-6 animate-fade-in" style={{ animationDelay: "0.3s" }}>
-            {[
-              { key: "ALL" as const, label: "All Media", icon: null },
-              { key: "PHOTO" as const, label: "Photos", icon: <Image className="w-4 h-4" /> },
-              { key: "VIDEO" as const, label: "Videos", icon: <Video className="w-4 h-4" /> },
-            ].map((f) => (
-              <button
-                key={f.key}
-                onClick={() => setFilter(f.key)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all duration-300 ${filter === f.key
-                  ? "bg-white text-primary-700 shadow-md"
-                  : "bg-white/10 text-white/80 hover:bg-white/20 border border-white/10"
-                  }`}
-              >
-                {f.icon}
-                {f.label}
-              </button>
-            ))}
-
-            <button
-              onClick={fetchMedia}
-              className="ml-auto flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium bg-white/10 text-white/80 hover:bg-white/20 border border-white/10 transition-all duration-300"
-            >
-              <RefreshCw className="w-4 h-4" />
-              Refresh
-            </button>
+    <div className="fixed inset-0 bg-black overflow-hidden">
+      {/* Full-screen carousel — always fills the screen */}
+      {loading ? (
+        <div className="flex items-center justify-center w-full h-full">
+          <div className="relative">
+            <div className="w-14 h-14 border-4 border-white/10 rounded-full" />
+            <div className="absolute inset-0 w-14 h-14 border-4 border-white/60 rounded-full border-t-transparent animate-spin" />
           </div>
         </div>
-      </div>
-
-      {/* Carousel Section */}
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 mt-12 relative z-10">
-        {loading ? (
-          <div className="flex items-center justify-center h-[60vh] bg-white rounded-2xl shadow-card">
-            <div className="text-center">
-              <div className="relative">
-                <div className="w-16 h-16 border-4 border-primary-100 rounded-full" />
-                <div className="absolute inset-0 w-16 h-16 border-4 border-primary-500 rounded-full border-t-transparent animate-spin" />
-              </div>
-              <p className="text-gray-400 mt-6 font-medium">Loading media...</p>
-            </div>
-          </div>
-        ) : (
-          <Carousel media={media} />
-        )}
-      </div>
-
-      {/* Media Grid */}
-      {!loading && media.length > 0 && (
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
-          <div className="flex items-center gap-3 mb-8">
-            <div className="w-1 h-8 bg-gradient-to-b from-primary-500 to-accent-500 rounded-full" />
-            <h2 className="text-2xl font-bold text-gray-800">
-              All Event Media
-            </h2>
-            <span className="ml-2 px-3 py-1 bg-primary-50 text-primary-600 rounded-full text-sm font-semibold">
-              {media.length}
-            </span>
-          </div>
-
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-5">
-            {media.map((item, index) => (
-              <div
-                key={item.id}
-                className="group relative aspect-square bg-gray-100 rounded-2xl overflow-hidden cursor-pointer shadow-sm hover:shadow-card-hover transition-all duration-500 animate-fade-in"
-                style={{ animationDelay: `${index * 0.05}s` }}
-              >
-                {item.type === "VIDEO" ? (
-                  item.thumbnailUrl ? (
-                    <img
-                      src={item.thumbnailUrl}
-                      alt={item.title}
-                      className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ease-out"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-gray-800 to-gray-900">
-                      <Video className="w-10 h-10 text-gray-500" />
-                    </div>
-                  )
-                ) : (
-                  <img
-                    src={item.url}
-                    alt={item.title}
-                    className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ease-out"
-                  />
-                )}
-
-                {/* Overlay */}
-                <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/0 to-black/0 opacity-0 group-hover:opacity-100 transition-all duration-300">
-                  <div className="absolute bottom-0 left-0 right-0 p-4 translate-y-2 group-hover:translate-y-0 transition-transform duration-300">
-                    <p className="text-white text-sm font-semibold truncate">
-                      {item.title}
-                    </p>
-                    {item.eventName && (
-                      <p className="text-white/60 text-xs mt-0.5 truncate">{item.eventName}</p>
-                    )}
-                  </div>
-                </div>
-
-                {/* Video play icon */}
-                {item.type === "VIDEO" && (
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="w-12 h-12 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center border border-white/20 group-hover:scale-110 transition-transform duration-300">
-                      <Play className="w-5 h-5 text-white ml-0.5" />
-                    </div>
-                  </div>
-                )}
-
-                {/* Type badge */}
-                <div className="absolute top-3 left-3">
-                  <span className={`badge ${item.type === "VIDEO"
-                    ? "bg-red-500/90 text-white backdrop-blur-sm"
-                    : "bg-primary-500/90 text-white backdrop-blur-sm"
-                    }`}>
-                    {item.type}
-                  </span>
-                </div>
-
-
-              </div>
-            ))}
-          </div>
-        </div>
+      ) : (
+        <DisplayCarousel media={media} variant="display" />
       )}
 
-      {/* Footer */}
-      <footer className="bg-white/80 backdrop-blur-sm border-t border-gray-100 py-8 mt-8">
-        <div className="max-w-7xl mx-auto px-4 text-center">
-          <div className="flex items-center justify-center gap-2 text-gray-400 text-sm">
-            <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse-soft" />
-            <span>Auto-refreshes every 5 minutes</span>
-          </div>
-          <p className="text-gray-300 text-xs mt-2">LibPlay — Library Event Display System</p>
+      {/* Sign Out — float bottom-left, appear on mouse move, only when NOT in fullscreen */}
+      {user && !isFullscreen && (
+        <div
+          className="absolute bottom-8 left-6 z-[100] transition-all duration-500"
+          style={{ 
+            opacity: controlsVisible ? 1 : 0, 
+            pointerEvents: controlsVisible ? "auto" : "none",
+            transform: controlsVisible ? "translateY(0)" : "translateY(10px)"
+          }}
+        >
+          <button
+            onClick={handleLogout}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-2xl text-[12px] font-black uppercase tracking-wider bg-white/10 backdrop-blur-md text-white border border-white/20 hover:bg-white/20 hover:scale-105 transition-all duration-300 shadow-2xl"
+            title="Sign Out"
+          >
+            <LogOut className="w-4 h-4" />
+            Sign Out
+          </button>
         </div>
-      </footer>
+      )}
     </div>
   );
 }

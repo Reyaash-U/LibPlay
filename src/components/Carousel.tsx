@@ -1,76 +1,167 @@
 "use client";
 
-import { useCallback, useEffect, useState, useRef } from "react";
+import { useCallback, useEffect, useState, useRef, useMemo } from "react";
 import useEmblaCarousel from "embla-carousel-react";
-import Autoplay from "embla-carousel-autoplay";
-import { ChevronLeft, ChevronRight, Image as ImageIcon, Maximize, Minimize, Volume2, VolumeX, Trash2, Loader2 } from "lucide-react";
+import { 
+  ChevronLeft, 
+  ChevronRight, 
+  Image as ImageIcon, 
+  Maximize, 
+  Minimize, 
+  Volume2, 
+  VolumeX, 
+  Play, 
+  Pause,
+  Video,
+  LayoutGrid
+} from "lucide-react";
 import { MediaItem } from "@/lib/types";
 
 interface CarouselProps {
   media: MediaItem[];
   onDelete?: (id: string) => Promise<void>;
+  variant?: "display" | "dashboard";
 }
 
-export default function Carousel({ media, onDelete }: CarouselProps) {
-  const [emblaRef, emblaApi] = useEmblaCarousel({ loop: true }, [
-    Autoplay({ delay: 5000, stopOnInteraction: false })
-  ]);
+export default function Carousel({ media, onDelete, variant = "dashboard" }: CarouselProps) {
+  const [filter, setFilter] = useState<"ALL" | "PHOTO" | "VIDEO">("ALL");
+  
+  // Internal filtering logic
+  const filteredMedia = useMemo(() => {
+    if (filter === "ALL") return media;
+    return media.filter(item => item.type === filter);
+  }, [media, filter]);
+
+  const [emblaRef, emblaApi] = useEmblaCarousel({ loop: true });
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [isMuted, setIsMuted] = useState(true);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [isMuted, setIsMuted] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(true);
+  const [controlsVisible, setControlsVisible] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRefs = useRef<Map<string, HTMLVideoElement>>(new Map());
+  const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const scrollPrev = useCallback(() => emblaApi?.scrollPrev(), [emblaApi]);
-  const scrollNext = useCallback(() => emblaApi?.scrollNext(), [emblaApi]);
+  // Re-read current media based on filtered list
+  const currentMedia = filteredMedia[selectedIndex];
 
-  // When a slide is selected, auto-play video if it's a video slide
+  // Custom Autoplay Logic for per-item duration
+  useEffect(() => {
+    if (!emblaApi || !isPlaying) return;
+    if (!currentMedia) return;
+
+    if (currentMedia.type === "PHOTO") {
+      const delay = (currentMedia.displayDuration || 5) * 1000;
+      const timer = setTimeout(() => {
+        emblaApi.scrollNext();
+      }, delay);
+      return () => clearTimeout(timer);
+    }
+  }, [selectedIndex, isPlaying, emblaApi, currentMedia]);
+
+  const showControls = useCallback(() => {
+    setControlsVisible(true);
+    if (hideTimer.current) clearTimeout(hideTimer.current);
+    hideTimer.current = setTimeout(() => setControlsVisible(false), 3000);
+  }, []);
+
+  const scrollPrev = useCallback(() => {
+    emblaApi?.scrollPrev();
+    showControls();
+  }, [emblaApi, showControls]);
+
+  const scrollNext = useCallback(() => {
+    emblaApi?.scrollNext();
+    showControls();
+  }, [emblaApi, showControls]);
+
+  const toggleFullscreen = useCallback((e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    const element = containerRef.current;
+    if (!element) return;
+
+    if (!document.fullscreenElement) {
+      element.requestFullscreen().then(() => setIsFullscreen(true)).catch((err) => {
+        console.error("Error attempting to enable full-screen mode:", err);
+      });
+    } else if (document.fullscreenElement === element) {
+      document.exitFullscreen().then(() => setIsFullscreen(false)).catch(() => {});
+    }
+  }, []);
+
+  useEffect(() => {
+    const handler = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", handler);
+    return () => document.removeEventListener("fullscreenchange", handler);
+  }, []);
+
+  const handleVideoEnded = useCallback(() => {
+    if (emblaApi) emblaApi.scrollNext();
+  }, [emblaApi]);
+
+  const toggleMute = useCallback((e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setIsMuted(prev => !prev);
+    showControls();
+  }, [showControls]);
+
+  const togglePlayPause = useCallback((e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (!emblaApi) return;
+    
+    if (isPlaying) {
+      setIsPlaying(false);
+      const index = emblaApi.selectedScrollSnap();
+      const mediaItem = filteredMedia[index];
+      if (mediaItem?.type === "VIDEO") {
+        const videoEl = videoRefs.current.get(mediaItem.id);
+        if (videoEl) videoEl.pause();
+      }
+    } else {
+      setIsPlaying(true);
+      const index = emblaApi.selectedScrollSnap();
+      const mediaItem = filteredMedia[index];
+      if (mediaItem?.type === "VIDEO") {
+        const videoEl = videoRefs.current.get(mediaItem.id);
+        if (videoEl) videoEl.play().catch(() => {});
+      }
+    }
+    showControls();
+  }, [emblaApi, isPlaying, filteredMedia, showControls]);
+
+  const handleScreenClick = useCallback(() => {
+    togglePlayPause();
+  }, [togglePlayPause]);
+
+  useEffect(() => {
+    videoRefs.current.forEach((video) => {
+      video.muted = isMuted;
+    });
+  }, [isMuted]);
+
   const onSelect = useCallback(() => {
     if (!emblaApi) return;
     const index = emblaApi.selectedScrollSnap();
+    setSelectedIndex(index);
 
-    // Check if the actual selected item index has changed
-    // We don't want to reset video if just the 'media' reference changed but index is same
-    setSelectedIndex((prevIndex) => {
-      // If index is the same, we check if we need to do anything
-      // This is a bit tricky with how React state works, but let's compare
-      return index;
-    });
+    const mediaItem = filteredMedia[index];
 
-    // Pause OTHER videos
     videoRefs.current.forEach((video, id) => {
-      const currentMedia = media[index];
-      if (currentMedia && id !== currentMedia.id) {
+      if (mediaItem && id !== mediaItem.id) {
         video.pause();
         video.currentTime = 0;
       }
     });
 
-    // If the current slide is a video, pause autoplay and play the video
-    const currentMedia = media[index];
-    const autoplay = emblaApi.plugins()?.autoplay;
-
-    if (currentMedia?.type === "VIDEO") {
-      if (autoplay && typeof autoplay.stop === "function") {
-        autoplay.stop();
-      }
-      const videoEl = videoRefs.current.get(currentMedia.id);
-      if (videoEl && videoEl.paused) {
-        videoEl.play().catch(() => { });
-      }
-    } else {
-      // For images, make sure autoplay is running
-      if (autoplay) {
-        try {
-          if (typeof autoplay.play === "function") autoplay.play();
-          if (typeof autoplay.reset === "function") autoplay.reset();
-        } catch (e) {
-          console.warn("Autoplay interaction failed", e);
-        }
+    if (mediaItem?.type === "VIDEO") {
+      const videoEl = videoRefs.current.get(mediaItem.id);
+      if (videoEl && videoEl.paused && isPlaying) {
+        videoEl.play().catch(() => {});
+      } else if (videoEl && !isPlaying) {
+        videoEl.pause();
       }
     }
-  }, [emblaApi, media]);
+  }, [emblaApi, isPlaying, filteredMedia]);
 
   useEffect(() => {
     if (!emblaApi) return;
@@ -81,152 +172,122 @@ export default function Carousel({ media, onDelete }: CarouselProps) {
     };
   }, [emblaApi, onSelect]);
 
-  // Handle video ended — move to next slide
-  const handleVideoEnded = useCallback(() => {
-    if (emblaApi) {
-      emblaApi.scrollNext();
-      // the onSelect handler will restart autoplay if the next object is an image
-    }
-  }, [emblaApi]);
-
-  // Fullscreen toggle
-  const toggleFullscreen = useCallback(() => {
-    if (!containerRef.current) return;
-    if (!document.fullscreenElement) {
-      containerRef.current.requestFullscreen().then(() => setIsFullscreen(true)).catch(() => { });
-    } else {
-      document.exitFullscreen().then(() => setIsFullscreen(false)).catch(() => { });
-    }
-  }, []);
-
-  // Sync muted state with all video elements
   useEffect(() => {
-    videoRefs.current.forEach((video) => {
-      video.muted = isMuted;
-    });
-  }, [isMuted]);
+    const handler = () => showControls();
+    window.addEventListener("mousemove", handler);
+    window.addEventListener("touchstart", handler);
+    return () => {
+      window.removeEventListener("mousemove", handler);
+      window.removeEventListener("touchstart", handler);
+    };
+  }, [showControls]);
 
-  // Constantly ensure Autoplay remains paused while a video is selected
-  // This prevents user interactions (like volume click) from restarting the timer
   useEffect(() => {
-    const interval = setInterval(() => {
-      if (!emblaApi) return;
-      const index = emblaApi.selectedScrollSnap();
-      if (media[index]?.type === "VIDEO") {
-        const autoplay = emblaApi.plugins()?.autoplay;
-        if (autoplay && typeof autoplay.stop === "function") {
-          autoplay.stop();
-        }
+    const handleKeyDown = (e: globalThis.KeyboardEvent) => {
+      if (e.key === 'ArrowLeft') scrollPrev();
+      else if (e.key === 'ArrowRight') scrollNext();
+      else if (e.key === ' ' || e.key === 'MediaPlayPause') {
+        e.preventDefault();
+        togglePlayPause();
+      } else if (e.key === 'm' || e.key === 'M') toggleMute();
+      else if (e.key === 'f' || e.key === 'F') {
+        e.preventDefault();
+        toggleFullscreen();
       }
-    }, 500);
-    return () => clearInterval(interval);
-  }, [emblaApi, media]);
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [scrollPrev, scrollNext, togglePlayPause, toggleMute, toggleFullscreen]);
 
-  const toggleMute = useCallback(() => {
-    setIsMuted(prev => !prev);
-  }, []);
-
-  const handleDeleteItem = async (id: string) => {
-    if (onDelete) {
-      setDeletingId(id);
-      try {
-        await onDelete(id);
-      } finally {
-        setDeletingId(null);
-      }
-    }
-  };
-
-  // Listen for fullscreen changes (e.g. user presses Escape)
-  useEffect(() => {
-    const handler = () => setIsFullscreen(!!document.fullscreenElement);
-    document.addEventListener("fullscreenchange", handler);
-    return () => document.removeEventListener("fullscreenchange", handler);
-  }, []);
-
-  if (media.length === 0) {
+  if (filteredMedia.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center h-[60vh] glass-card rounded-3xl">
-        <div className="w-20 h-20 rounded-2xl bg-primary-50 flex items-center justify-center mb-5">
-          <ImageIcon className="w-10 h-10 text-primary-300" />
+      <div ref={containerRef} className={`flex flex-col items-center justify-center w-full relative group transition-colors duration-700 ${
+        variant === "display" ? "h-full bg-black" : "h-96 bg-gray-400"
+      }`}>
+        <div className="absolute top-10 left-10 z-50 animate-fade-in pointer-events-auto">
+          <button
+            onClick={() => toggleFullscreen()}
+            className="w-14 h-14 rounded-2xl bg-white/10 backdrop-blur-md border border-white/10 flex items-center justify-center text-white hover:bg-white/20 transition-all shadow-2xl"
+            title="Enter Fullscreen (F)"
+          >
+            <Maximize className="w-6 h-6" />
+          </button>
         </div>
-        <h3 className="text-xl font-bold text-gray-500">
-          No Media Available
-        </h3>
-        <p className="text-gray-400 mt-1 text-sm">
-          Approved photos and videos will appear here
-        </p>
+
+        <div className="text-center animate-fade-in px-6">
+          <div className={`mx-auto mb-6 relative ${variant === "display" ? "w-24 h-24" : "w-16 h-16"}`}>
+            <ImageIcon className={`w-full h-full ${variant === "display" ? "text-white/20" : "text-gray-800"}`} />
+          </div>
+          <h3 className={`font-light italic tracking-widest uppercase ${
+            variant === "display" ? "text-3xl sm:text-4xl text-white/40 font-black" : "text-2xl text-gray-500"
+          }`}>
+            No {filter !== "ALL" ? filter.toLowerCase() : ""} Media
+          </h3>
+        </div>
+
+        {/* Filter Selection in Empty State too */}
+        <div className="absolute bottom-8 right-6 z-50 flex items-center gap-2 pointer-events-auto">
+          {[
+            { key: "ALL", label: "All", icon: <LayoutGrid className="w-3.5 h-3.5" /> },
+            { key: "PHOTO", label: "Photos", icon: <ImageIcon className="w-3.5 h-3.5" /> },
+            { key: "VIDEO", label: "Videos", icon: <Video className="w-3.5 h-3.5" /> }
+          ].map((f) => (
+            <button
+              key={f.key}
+              onClick={() => setFilter(f.key as any)}
+              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all duration-300 backdrop-blur-sm border ${
+                filter === f.key
+                  ? "bg-white text-black border-white shadow-lg"
+                  : "bg-white/10 text-white/70 border-white/20 hover:bg-white/20"
+              }`}
+            >
+              {f.icon}
+              {f.label}
+            </button>
+          ))}
+        </div>
       </div>
     );
   }
 
   return (
-    <div
-      ref={containerRef}
-      className={`relative group bg-black ${isFullscreen ? "w-screen h-screen" : "w-full rounded-3xl overflow-hidden shadow-2xl ring-1 ring-black/5"}`}
-    >
-      {/* Main Carousel */}
-      <div className={`embla overflow-hidden ${isFullscreen ? "h-screen" : "h-[60vh] sm:h-[70vh] lg:h-[80vh]"}`} ref={emblaRef}>
-        <div className={`embla__container ${isFullscreen ? "h-screen" : "h-full"}`}>
-          {media.map((item) => {
+    <div ref={containerRef} className="relative w-full h-full bg-black overflow-hidden">
+      <div className="absolute inset-0 z-10 cursor-pointer" onClick={handleScreenClick} />
+
+      <div className="embla w-full h-full" ref={emblaRef}>
+        <div className="embla__container h-full">
+          {filteredMedia.map((item) => {
             const isVideo = item.type === "VIDEO";
-            // Use streaming route for videos, direct link for photos
             const mediaUrl = isVideo
               ? `/api/media/stream?filename=${encodeURIComponent(item.publicId)}`
               : item.url;
 
             return (
-              <div
-                key={item.id}
-                className={`embla__slide relative bg-black flex items-center justify-center ${isFullscreen ? "h-screen" : ""}`}
-              >
+              <div key={item.id} className="embla__slide relative flex items-center justify-center h-full w-full">
                 {isVideo ? (
                   <video
-                    ref={(el) => {
-                      if (el) videoRefs.current.set(item.id, el);
-                    }}
+                    ref={(el) => { if (el) videoRefs.current.set(item.id, el); }}
                     src={mediaUrl}
                     muted={isMuted}
                     playsInline
                     preload="auto"
                     onEnded={handleVideoEnded}
-                    className={`w-full h-full object-cover ${isFullscreen ? "h-screen" : "min-h-[60vh] max-h-[85vh]"}`}
+                    className="w-full h-full object-cover"
                   />
                 ) : (
-                  <img
-                    src={mediaUrl}
-                    alt={item.title}
-                    className={`w-full h-full object-cover ${isFullscreen ? "h-screen" : "min-h-[60vh] max-h-[85vh]"}`}
-                  />
+                  <img src={mediaUrl} alt={item.title} className="w-full h-full object-cover" />
                 )}
 
-                {/* Overlay Info */}
-                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/30 to-transparent p-6 sm:p-8 transition-opacity duration-300">
-                  <h3 className="text-white text-xl sm:text-2xl font-bold drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]">{item.title}</h3>
-                  {item.eventName && (
-                    <p className="text-white/70 text-sm mt-1.5 flex items-center gap-2">
-                      <span className="w-1 h-1 rounded-full bg-accent-400 inline-block" />
-                      {item.eventName}
-                      {item.eventDate && ` \u2022 ${item.eventDate}`}
-                    </p>
-                  )}
-                  {item.description && (
-                    <p className="text-white/50 text-sm mt-1 line-clamp-2 max-w-2xl">
-                      {item.description}
-                    </p>
-                  )}
-                </div>
-
-                {/* Media type badge */}
-                <div className="absolute top-4 right-4 transition-opacity duration-300">
-                  <span
-                    className={`px-3.5 py-1.5 rounded-full text-xs font-bold uppercase tracking-wider backdrop-blur-sm ${item.type === "VIDEO"
-                      ? "bg-red-500/80 text-white"
-                      : "bg-primary-500/80 text-white"
-                      }`}
-                  >
-                    {item.type === "VIDEO" ? "\u25B6 Video" : "\u2318 Photo"}
-                  </span>
+                <div className={`absolute top-0 left-0 right-0 bg-gradient-to-b from-black/80 via-black/40 to-transparent transition-opacity duration-300 pointer-events-none z-20 ${
+                  variant === "display" ? "p-10 pt-12" : "p-6"
+                }`}>
+                  <div className={`mx-auto text-center ${variant === "display" ? "max-w-4xl" : "max-w-2xl"}`}>
+                    <h3 className={`text-white font-black drop-shadow-[0_4px_12px_rgba(0,0,0,0.9)] tracking-tight uppercase ${
+                      variant === "display" ? "text-3xl sm:text-4xl md:text-5xl" : "text-xl sm:text-2xl"
+                    }`}>
+                      {item.title}
+                    </h3>
+                  </div>
                 </div>
               </div>
             );
@@ -234,81 +295,73 @@ export default function Carousel({ media, onDelete }: CarouselProps) {
         </div>
       </div>
 
-      {/* Controls overlay — visible on hover */}
-      <div className="absolute inset-0 pointer-events-none">
-        {/* Navigation Arrows */}
-        {media.length > 1 && (
-          <>
-            <button
-              onClick={scrollPrev}
-              className="pointer-events-auto absolute left-4 top-1/2 -translate-y-1/2 w-12 h-12 rounded-2xl bg-white/10 backdrop-blur-sm flex items-center justify-center transition-all hover:bg-white/20 hover:scale-105 shadow-lg"
-            >
-              <ChevronLeft className="w-6 h-6 text-white" />
-            </button>
-            <button
-              onClick={scrollNext}
-              className="pointer-events-auto absolute right-4 top-1/2 -translate-y-1/2 w-12 h-12 rounded-2xl bg-white/10 backdrop-blur-sm flex items-center justify-center transition-all hover:bg-white/20 hover:scale-105 shadow-lg"
-            >
-              <ChevronRight className="w-6 h-6 text-white" />
-            </button>
-          </>
-        )}
-
-        {/* Fullscreen button */}
-        <button
-          onClick={toggleFullscreen}
-          className="pointer-events-auto absolute top-4 left-4 w-10 h-10 rounded-xl bg-white/10 backdrop-blur-sm flex items-center justify-center transition-all hover:bg-white/20 shadow-lg"
-        >
-          {isFullscreen ? (
-            <Minimize className="w-5 h-5 text-white" />
-          ) : (
-            <Maximize className="w-5 h-5 text-white" />
-          )}
-        </button>
-
-        {/* Volume Toggle */}
-        <button
-          onClick={toggleMute}
-          className="pointer-events-auto absolute top-4 right-4 w-10 h-10 rounded-xl bg-white/10 backdrop-blur-sm flex items-center justify-center transition-all hover:bg-white/20 shadow-lg"
-        >
-          {isMuted ? (
-            <VolumeX className="w-5 h-5 text-white" />
-          ) : (
-            <Volume2 className="w-5 h-5 text-white" />
-          )}
-        </button>
-
-        {/* Delete button (Carousel) */}
-        {onDelete && media[selectedIndex] && (
+      <div className="absolute inset-0 pointer-events-none z-30 flex flex-col justify-center items-center gap-12 transition-all duration-500" style={{ opacity: controlsVisible ? 1 : 0 }}>
+        {/* Fullscreen Toggle - Now Always Visible on interaction */}
+        <div className="absolute top-10 left-10 pointer-events-auto">
           <button
-            onClick={() => handleDeleteItem(media[selectedIndex].id)}
-            disabled={deletingId === media[selectedIndex].id}
-            className="pointer-events-auto absolute top-4 left-16 w-10 h-10 rounded-xl bg-red-600/20 backdrop-blur-sm flex items-center justify-center transition-all hover:bg-red-600/40 text-red-500 hover:text-white"
-            title="Delete this media"
+            onClick={toggleFullscreen}
+            className="w-14 h-14 rounded-2xl bg-white/10 backdrop-blur-md border border-white/10 flex items-center justify-center text-white hover:bg-white/20 transition-all shadow-2xl"
           >
-            {deletingId === media[selectedIndex]?.id ? (
-              <Loader2 className="w-5 h-5 animate-spin" />
-            ) : (
-              <Trash2 className="w-5 h-5" />
-            )}
+            {isFullscreen ? <Minimize className="w-6 h-6" /> : <Maximize className="w-6 h-6" />}
           </button>
-        )}
+        </div>
 
-        {/* Dots indicator */}
-        {media.length > 1 && (
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2 transition-opacity duration-300">
-            {media.map((_, index) => (
-              <button
-                key={index}
-                onClick={() => emblaApi?.scrollTo(index)}
-                className={`pointer-events-auto h-2 rounded-full transition-all duration-300 ${index === selectedIndex
-                  ? "bg-white w-8 shadow-[0_0_10px_rgba(255,255,255,0.5)]"
-                  : "bg-white/40 w-2 hover:bg-white/80 hover:scale-110"
-                  }`}
-              />
-            ))}
+        {/* Filters - Bottom Right */}
+        <div className="absolute bottom-8 right-6 z-50 flex items-center gap-2 pointer-events-auto">
+          {[
+            { key: "ALL", label: "All", icon: <LayoutGrid className="w-3.5 h-3.5" /> },
+            { key: "PHOTO", label: "Photos", icon: <ImageIcon className="w-3.5 h-3.5" /> },
+            { key: "VIDEO", label: "Videos", icon: <Video className="w-3.5 h-3.5" /> }
+          ].map((f) => (
+            <button
+              key={f.key}
+              onClick={(e) => { e.stopPropagation(); setFilter(f.key as any); }}
+              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all duration-300 backdrop-blur-sm border ${
+                filter === f.key
+                  ? "bg-white text-black border-white shadow-lg"
+                  : "bg-white/10 text-white/70 border-white/20 hover:bg-white/20"
+              }`}
+            >
+              {f.icon}
+              {f.label}
+            </button>
+          ))}
+        </div>
+
+        {filteredMedia.length > 1 && (
+          <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 flex justify-between px-8">
+            <button onClick={scrollPrev} className="pointer-events-auto w-16 h-16 rounded-full bg-black/30 backdrop-blur-xl border border-white/20 flex items-center justify-center text-white hover:bg-black/50 hover:scale-110 transition-all shadow-2xl">
+              <ChevronLeft className="w-8 h-8" />
+            </button>
+            <button onClick={scrollNext} className="pointer-events-auto w-16 h-16 rounded-full bg-black/30 backdrop-blur-xl border border-white/20 flex items-center justify-center text-white hover:bg-black/50 hover:scale-110 transition-all shadow-2xl">
+              <ChevronRight className="w-8 h-8" />
+            </button>
           </div>
         )}
+
+        {!isPlaying && (
+          <div className={`${variant === "display" ? "p-8" : "p-4"} rounded-full bg-white/10 backdrop-blur-3xl border border-white/20 animate-pulse`}>
+            <Pause className={`${variant === "display" ? "w-20 h-20" : "w-10 h-10"} text-white fill-white`} />
+          </div>
+        )}
+
+        <div className={`absolute left-1/2 -translate-x-1/2 flex items-center gap-6 pointer-events-auto ${
+          variant === "display" ? "bottom-12" : "bottom-6 scale-75"
+        }`}>
+          <button onClick={togglePlayPause} className="w-14 h-14 rounded-2xl bg-white/10 backdrop-blur-md border border-white/10 flex items-center justify-center text-white hover:bg-white/20 transition-all">
+            {isPlaying ? <Pause className="w-6 h-6" /> : <Play className="w-6 h-6" />}
+          </button>
+          <button onClick={toggleMute} className="w-14 h-14 rounded-2xl bg-white/10 backdrop-blur-md border border-white/10 flex items-center justify-center text-white hover:bg-white/20 transition-all">
+            {isMuted ? <VolumeX className="w-6 h-6" /> : <Volume2 className="w-6 h-6" />}
+          </button>
+          <div className="flex gap-2.5 px-6 py-4 rounded-2xl bg-black/20 backdrop-blur-md border border-white/5">
+            {filteredMedia.map((_, index) => (
+              <button key={index} onClick={() => emblaApi?.scrollTo(index)} className={`h-2 transition-all duration-300 rounded-full ${
+                index === selectedIndex ? "w-8 bg-white shadow-[0_0_12px_rgba(255,255,255,0.8)]" : "w-2 bg-white/20 hover:bg-white/40"
+              }`} />
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );

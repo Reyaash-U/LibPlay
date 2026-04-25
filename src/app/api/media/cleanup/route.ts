@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/mongodb";
 
-// GET /api/cleanup-media
+// GET /api/media/cleanup
 // Removes all media records whose URL points to an external localhost (broken seed data)
 export async function GET() {
   try {

@@ -15,6 +15,8 @@ export interface MediaItem {
   eventDate: string | null;
   fileSize: number | null;
   duration: number | null;
+  displayDuration: number | null; // For photos, how long to show in carousel (seconds)
+  order: number; // Manual sorting order
   userId: string;
   createdAt: string;
   updatedAt: string;

@@ -4,7 +4,7 @@ import { getUser } from "@/lib/auth";
 import fs from "fs";
 import path from "path";
 
-// GET /api/migrate-media
+// GET /api/media/migrate
 // Moves existing files from public/uploads/ → storage/uploads/
 // and updates their URLs in MongoDB to the new proxy format.
 // Run this ONCE to migrate old uploads. Only accessible by LIBRARIAN / ADMIN.

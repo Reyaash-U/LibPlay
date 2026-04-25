@@ -52,7 +52,7 @@ export default function Navbar() {
 
   const isActive = (path: string) => pathname === path;
 
-  if (pathname === "/login") return null;
+  if (pathname === "/" || pathname === "/login" || pathname === "/librarian" || pathname === "/staff") return null;
 
   return (
     <nav className="bg-white/80 backdrop-blur-xl shadow-sm border-b border-gray-100/80 sticky top-0 z-50">

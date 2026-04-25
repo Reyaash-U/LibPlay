@@ -23,8 +23,14 @@ export async function GET(request: NextRequest) {
 
     if (!user || user.role === "STAFF" || user.role === "DISPLAY") {
       if (user?.role === "STAFF") {
-        // Staff sees approved media + their own uploads
-        where = { $or: [{ status: "APPROVED" }, { userId: user.userId }] };
+        if (status === "APPROVED") {
+          where.status = "APPROVED";
+        } else if (status === "PENDING" || status === "REJECTED") {
+          where = { status, userId: user.userId };
+        } else {
+          // Default: approved media + their own uploads
+          where = { $or: [{ status: "APPROVED" }, { userId: user.userId }] };
+        }
       } else {
         // Public and display users see approved media only
         where.status = "APPROVED";
@@ -46,7 +52,7 @@ export async function GET(request: NextRequest) {
     const [rawMedia, total] = await Promise.all([
       mediaCollection
         .find(where)
-        .sort({ createdAt: -1 })
+        .sort({ order: 1, createdAt: 1 })
         .skip((page - 1) * limit)
         .limit(limit)
         .toArray(),
@@ -66,12 +72,22 @@ export async function GET(request: NextRequest) {
     }, {});
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const media = rawMedia.map((m: any) => ({
-      ...m,
-      id: m._id.toString(),
-      _id: undefined,
-      uploadedBy: userMap[m.userId as string] || null,
-    }));
+    const media = rawMedia.map((m: any) => {
+      // Make media URLs relative to fixed broken images on different environments
+      let relativeUrl = m.url;
+      if (m.url && m.url.includes("/api/media/stream")) {
+        const parts = m.url.split("/api/media/stream");
+        relativeUrl = "/api/media/stream" + parts[parts.length - 1];
+      }
+
+      return {
+        ...m,
+        id: m._id.toString(),
+        _id: undefined,
+        url: relativeUrl,
+        uploadedBy: userMap[m.userId as string] || null,
+      };
+    });
 
     return NextResponse.json({
       success: true,

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getDb } from "@/lib/mongodb";
 import bcrypt from "bcryptjs";
 
+// GET /api/admin/seed — Seeds the database with default users
 export async function GET() {
   try {
     const hashedPassword = await bcrypt.hash("password123", 10);

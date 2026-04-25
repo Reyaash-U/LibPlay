@@ -9,6 +9,7 @@ import {
   Loader2,
   CheckCircle,
 } from "lucide-react";
+import { useUpload } from "@/context/UploadContext";
 
 interface UploadFormProps {
   onUploadSuccess?: () => void;
@@ -21,8 +22,7 @@ export default function UploadForm({ onUploadSuccess }: UploadFormProps) {
   const [description, setDescription] = useState("");
   const [eventName, setEventName] = useState("");
   const [eventDate, setEventDate] = useState("");
-  const [uploading, setUploading] = useState(false);
-  const [progress, setProgress] = useState(0);
+  const { uploadMedia } = useUpload();
   const [message, setMessage] = useState<{
     type: "success" | "error";
     text: string;
@@ -71,9 +71,6 @@ export default function UploadForm({ onUploadSuccess }: UploadFormProps) {
       return;
     }
 
-    setUploading(true);
-    setProgress(10);
-
     try {
       const formData = new FormData();
       formData.append("file", file);
@@ -82,43 +79,23 @@ export default function UploadForm({ onUploadSuccess }: UploadFormProps) {
       if (eventName.trim()) formData.append("eventName", eventName.trim());
       if (eventDate) formData.append("eventDate", eventDate);
 
-      // Simulate progress for large uploads
-      const progressInterval = setInterval(() => {
-        setProgress((prev) => Math.min(prev + 5, 90));
-      }, 500);
+      // Start background upload
+      uploadMedia(formData, file.name);
 
-      const res = await fetch("/api/upload", {
-        method: "POST",
-        body: formData,
-      });
-
-      clearInterval(progressInterval);
-      setProgress(100);
-
-      const data = await res.json();
-
-      if (data.success) {
-        setMessage({
-          type: "success",
-          text: "Media uploaded! Waiting for librarian approval.",
-        });
-        // Reset form
-        setFile(null);
-        setPreview(null);
-        setTitle("");
-        setDescription("");
-        setEventName("");
-        setEventDate("");
-        if (fileInputRef.current) fileInputRef.current.value = "";
-        onUploadSuccess?.();
-      } else {
-        setMessage({ type: "error", text: data.error || "Upload failed" });
-      }
+      // Reset form and notify parent to close modal
+      setFile(null);
+      setPreview(null);
+      setTitle("");
+      setDescription("");
+      setEventName("");
+      setEventDate("");
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      
+      // We call onUploadSuccess immediately because the requirement is to close the pop up tab
+      // when all necessary information is added (and upload starts).
+      onUploadSuccess?.();
     } catch (error) {
-      setMessage({ type: "error", text: "Network error. Please try again." });
-    } finally {
-      setUploading(false);
-      setProgress(0);
+      setMessage({ type: "error", text: "Failed to start upload. Please try again." });
     }
   };
 
@@ -136,85 +113,96 @@ export default function UploadForm({ onUploadSuccess }: UploadFormProps) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
-      {/* Message */}
+      {/* Message with Spotlight Effect */}
       {message && (
         <div
-          className={`flex items-center gap-3 p-4 rounded-2xl text-sm font-medium animate-slide-up ${
+          className={`p-4 rounded-2xl border flex items-start gap-3 animate-in fade-in slide-in-from-top-2 duration-300 ${
             message.type === "success"
-              ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-              : "bg-rose-50 text-rose-700 border border-rose-200"
+              ? "bg-emerald-50 border-emerald-100 shadow-[0_4px_12px_rgba(16,185,129,0.06)]"
+              : "bg-red-50 border-red-100 shadow-[0_4px_12px_rgba(239,68,68,0.06)]"
           }`}
         >
           {message.type === "success" ? (
-            <div className="w-8 h-8 rounded-xl bg-emerald-100 flex items-center justify-center flex-shrink-0">
-              <CheckCircle className="w-4 h-4 text-emerald-600" />
+            <div className="mt-0.5 w-5 h-5 rounded-full flex items-center justify-center shrink-0 bg-emerald-500">
+              <CheckCircle className="w-3 h-3 text-white" />
             </div>
           ) : (
-            <div className="w-8 h-8 rounded-xl bg-rose-100 flex items-center justify-center flex-shrink-0">
-              <X className="w-4 h-4 text-rose-600" />
+            <div className="mt-0.5 w-5 h-5 rounded-full flex items-center justify-center shrink-0 bg-red-500">
+              <span className="text-white text-[12px] font-bold">!</span>
             </div>
           )}
-          {message.text}
+          <div className="flex-1 min-w-0">
+            <h3 className={`text-sm font-bold mb-0.5 ${
+              message.type === "success" ? "text-emerald-900" : "text-red-900"
+            }`}>
+              {message.type === "success" ? "Success" : "Upload Failed"}
+            </h3>
+            <div className="max-h-32 overflow-y-auto pr-2">
+              <p className={`text-[13px] leading-relaxed font-semibold break-all ${
+                message.type === "success" ? "text-emerald-700" : "text-red-700"
+              }`}>
+                {message.text}
+              </p>
+            </div>
+          </div>
         </div>
       )}
 
       {/* File Upload Area */}
       <div>
-        <label className="block text-sm font-semibold text-gray-700 mb-2">
-          Photo or Video <span className="text-rose-400">*</span>
+        <label className="block text-[13px] font-bold uppercase tracking-wider mb-2.5" style={{ color: "#64748b" }}>
+          Photo or Video <span className="text-red-400">*</span>
         </label>
         {!file ? (
           <div
             onClick={() => fileInputRef.current?.click()}
-            className="border-2 border-dashed border-gray-200 rounded-2xl p-10 text-center cursor-pointer hover:border-primary-400 hover:bg-primary-50/30 transition-all group bg-gray-50/50"
+            className="group relative overflow-hidden border-2 border-dashed border-gray-200 rounded-[2rem] p-12 text-center cursor-pointer hover:border-[#4a8c62] hover:bg-[#4a8c62]/[0.02] transition-all duration-300 group"
           >
-            <div className="w-14 h-14 rounded-2xl bg-primary-100 flex items-center justify-center mx-auto mb-4 group-hover:scale-110 transition-transform">
-              <Upload className="w-7 h-7 text-primary-500" />
+            <div className="relative z-10">
+              <div className="w-16 h-16 rounded-[1.5rem] bg-gray-50 flex items-center justify-center mx-auto mb-5 group-hover:scale-110 group-hover:bg-[#4a8c62]/[0.08] transition-all duration-300">
+                <Upload className="w-7 h-7 text-gray-400 group-hover:text-[#4a8c62] transition-colors" />
+              </div>
+              <p className="text-[#1a2e22] text-lg font-bold mb-1">
+                Click to upload or drag & drop
+              </p>
+              <p className="text-gray-400 text-sm font-medium">
+                Images or Videos up to 1GB
+              </p>
             </div>
-            <p className="text-gray-600 font-semibold">
-              Click to upload or drag & drop
-            </p>
-            <p className="text-gray-400 text-sm mt-1">
-              Images (JPG, PNG, WebP) or Videos (MP4, MOV, AVI) up to 1GB
-            </p>
           </div>
         ) : (
-          <div className="border border-gray-200 rounded-2xl p-4 bg-gray-50/50">
-            <div className="flex items-center gap-4">
-              {preview ? (
-                <img
-                  src={preview}
-                  alt="Preview"
-                  className="w-20 h-20 object-cover rounded-xl ring-2 ring-primary-100"
-                />
-              ) : (
-                <div className="w-20 h-20 bg-gray-200 rounded-xl flex items-center justify-center">
-                  <FileVideo className="w-8 h-8 text-gray-500" />
-                </div>
-              )}
-              <div className="flex-1 min-w-0">
-                <p className="font-semibold text-gray-700 truncate">
-                  {file.name}
-                </p>
-                <div className="flex items-center gap-2 mt-1">
-                  {file.type.startsWith("video/") ? (
-                    <FileVideo className="w-4 h-4 text-red-500" />
-                  ) : (
-                    <FileImage className="w-4 h-4 text-primary-500" />
-                  )}
-                  <span className="text-sm text-gray-500">
-                    {formatFileSize(file.size)}
-                  </span>
-                </div>
+          <div className="border border-gray-100 rounded-[1.5rem] p-5 bg-white shadow-[0_4px_12px_rgba(0,0,0,0.03)] flex items-center gap-4">
+            {preview ? (
+              <img
+                src={preview}
+                alt="Preview"
+                className="w-20 h-20 object-cover rounded-2xl ring-4 ring-gray-50"
+              />
+            ) : (
+              <div className="w-20 h-20 bg-gray-50 rounded-2xl flex items-center justify-center">
+                <FileVideo className="w-8 h-8 text-gray-300" />
               </div>
-              <button
-                type="button"
-                onClick={removeFile}
-                className="p-2 hover:bg-gray-200 rounded-xl transition-colors"
-              >
-                <X className="w-5 h-5 text-gray-500" />
-              </button>
+            )}
+            <div className="flex-1 min-w-0">
+              <p className="font-bold text-[#1a2e22] truncate">
+                {file.name}
+              </p>
+              <div className="flex items-center gap-2 mt-1.5">
+                <div className="px-2 py-0.5 bg-gray-100 rounded-md text-[10px] font-bold uppercase tracking-wider text-gray-500">
+                  {file.type.split("/")[1]}
+                </div>
+                <span className="text-sm text-gray-400 font-semibold">
+                  {formatFileSize(file.size)}
+                </span>
+              </div>
             </div>
+            <button
+              type="button"
+              onClick={removeFile}
+              className="p-2.5 hover:bg-red-50 hover:text-red-500 rounded-xl transition-all duration-200 text-gray-400"
+            >
+              <X className="w-5 h-5" />
+            </button>
           </div>
         )}
         <input
@@ -228,49 +216,89 @@ export default function UploadForm({ onUploadSuccess }: UploadFormProps) {
 
       {/* Title */}
       <div>
-        <label className="block text-sm font-semibold text-gray-700 mb-2">
-          Title <span className="text-rose-400">*</span>
+        <label className="block text-[13px] font-bold uppercase tracking-wider mb-2" style={{ color: "#64748b" }}>
+          Title <span className="text-red-400">*</span>
         </label>
         <input
           type="text"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          placeholder="e.g., Annual Reading Festival 2025"
-          className="input-modern"
+          placeholder="Enter a descriptive title"
+          className="w-full px-5 py-3.5 rounded-2xl text-[15px] outline-none transition-all duration-200"
+          style={{
+            background: "#ffffff",
+            border: "1.5px solid #eee",
+            color: "#1a2e22",
+            boxShadow: "0 2px 4px rgba(0,0,0,0.01)",
+          }}
+          onFocus={(e) => {
+            e.currentTarget.style.borderColor = "#4a8c62";
+            e.currentTarget.style.boxShadow = "0 0 0 4px rgba(74,140,98,0.1)";
+          }}
+          onBlur={(e) => {
+            e.currentTarget.style.borderColor = "#eee";
+            e.currentTarget.style.boxShadow = "0 2px 4px rgba(0,0,0,0.01)";
+          }}
           required
         />
       </div>
 
       {/* Event Name & Date */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
         <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-2">
+          <label className="block text-[13px] font-bold uppercase tracking-wider mb-2" style={{ color: "#64748b" }}>
             Event Name
           </label>
           <input
             type="text"
             value={eventName}
             onChange={(e) => setEventName(e.target.value)}
-            placeholder="e.g., Book Fair 2025"
-            className="input-modern"
+            placeholder="Optional event name"
+            className="w-full px-5 py-3.5 rounded-2xl text-[15px] outline-none transition-all duration-200"
+            style={{
+              background: "#ffffff",
+              border: "1.5px solid #eee",
+              color: "#1a2e22",
+            }}
+            onFocus={(e) => {
+              e.currentTarget.style.borderColor = "#4a8c62";
+              e.currentTarget.style.boxShadow = "0 0 0 4px rgba(74,140,98,0.1)";
+            }}
+            onBlur={(e) => {
+              e.currentTarget.style.borderColor = "#eee";
+              e.currentTarget.style.boxShadow = "none";
+            }}
           />
         </div>
         <div>
-          <label className="block text-sm font-semibold text-gray-700 mb-2">
+          <label className="block text-[13px] font-bold uppercase tracking-wider mb-2" style={{ color: "#64748b" }}>
             Event Date
           </label>
           <input
             type="date"
             value={eventDate}
             onChange={(e) => setEventDate(e.target.value)}
-            className="input-modern"
+            className="w-full px-5 py-3.5 rounded-2xl text-[15px] outline-none transition-all duration-200"
+            style={{
+              background: "#ffffff",
+              border: "1.5px solid #eee",
+              color: "#1a2e22",
+            }}
+            onFocus={(e) => {
+              e.currentTarget.style.borderColor = "#4a8c62";
+              e.currentTarget.style.boxShadow = "0 0 0 4px rgba(74,140,98,0.1)";
+            }}
+            onBlur={(e) => {
+              e.currentTarget.style.borderColor = "#eee";
+              e.currentTarget.style.boxShadow = "none";
+            }}
           />
         </div>
       </div>
 
       {/* Description */}
       <div>
-        <label className="block text-sm font-semibold text-gray-700 mb-2">
+        <label className="block text-[13px] font-bold uppercase tracking-wider mb-2" style={{ color: "#64748b" }}>
           Description
         </label>
         <textarea
@@ -278,44 +306,46 @@ export default function UploadForm({ onUploadSuccess }: UploadFormProps) {
           onChange={(e) => setDescription(e.target.value)}
           placeholder="Brief description of the photo or video..."
           rows={3}
-          className="input-modern resize-none"
+          className="w-full px-5 py-3.5 rounded-2xl text-[15px] outline-none transition-all duration-200 resize-none"
+          style={{
+            background: "#ffffff",
+            border: "1.5px solid #eee",
+            color: "#1a2e22",
+          }}
+          onFocus={(e) => {
+            e.currentTarget.style.borderColor = "#4a8c62";
+            e.currentTarget.style.boxShadow = "0 0 0 4px rgba(74,140,98,0.1)";
+          }}
+          onBlur={(e) => {
+            e.currentTarget.style.borderColor = "#eee";
+            e.currentTarget.style.boxShadow = "none";
+          }}
         />
       </div>
 
-      {/* Progress Bar */}
-      {uploading && (
-        <div className="space-y-2 animate-fade-in">
-          <div className="flex justify-between text-sm">
-            <span className="text-gray-500 font-medium">Uploading...</span>
-            <span className="text-primary-600 font-bold">{progress}%</span>
-          </div>
-          <div className="w-full bg-gray-100 rounded-full h-2.5 overflow-hidden">
-            <div
-              className="bg-gradient-to-r from-primary-500 to-accent-500 h-2.5 rounded-full transition-all duration-300"
-              style={{ width: `${progress}%` }}
-            />
-          </div>
-        </div>
-      )}
-
       {/* Submit */}
-      <button
-        type="submit"
-        disabled={uploading || !file || !title.trim()}
-        className="w-full flex items-center justify-center gap-2 px-6 py-4 bg-gradient-to-r from-primary-600 to-primary-700 text-white rounded-2xl font-semibold hover:from-primary-700 hover:to-primary-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-lg shadow-primary-200/50 hover:shadow-xl hover:shadow-primary-300/50"
-      >
-        {uploading ? (
-          <>
-            <Loader2 className="w-5 h-5 animate-spin" />
-            Uploading...
-          </>
-        ) : (
-          <>
-            <Upload className="w-5 h-5" />
-            Upload Media
-          </>
-        )}
-      </button>
+      <div className="pt-2">
+        <button
+          type="submit"
+          disabled={!file || !title.trim()}
+          className="w-full flex items-center justify-center gap-3 py-4 rounded-[1.25rem] font-bold text-[15px] transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_8px_20px_-4px_rgba(0,0,0,0.1)] hover:shadow-[0_12px_28px_-4px_rgba(0,0,0,0.2)]"
+          style={{
+            background: "#1a1a1a",
+            color: "#ffffff",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = "translateY(-2px)";
+            e.currentTarget.style.background = "#000000";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = "translateY(0)";
+            e.currentTarget.style.background = "#1a1a1a";
+          }}
+        >
+          <Upload className="w-5 h-5" />
+          Upload Media
+        </button>
+      </div>
     </form>
   );
 }

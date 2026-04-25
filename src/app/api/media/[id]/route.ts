@@ -7,9 +7,10 @@ import path from "path";
 // PATCH /api/media/[id] - Approve or reject media (librarian only)
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const user = await getUser();
     if (!user) {
       return NextResponse.json(
@@ -25,9 +26,17 @@ export async function PATCH(
       );
     }
 
-    const { status } = await request.json();
+    const body = await request.json();
+    const { status, displayDuration } = body;
 
-    if (!["APPROVED", "REJECTED"].includes(status)) {
+    if (!status && displayDuration === undefined) {
+      return NextResponse.json(
+        { success: false, error: "Status or displayDuration is required" },
+        { status: 400 }
+      );
+    }
+
+    if (status && !["APPROVED", "REJECTED"].includes(status)) {
       return NextResponse.json(
         { success: false, error: "Status must be APPROVED or REJECTED" },
         { status: 400 }
@@ -35,11 +44,30 @@ export async function PATCH(
     }
 
     const db = await getDb();
-    const objectId = new ObjectId(params.id);
+    const objectId = new ObjectId(id);
+
+    // If rejecting, delete the physical file first
+    if (status === "REJECTED") {
+      const media = await db.collection("media").findOne({ _id: objectId });
+      if (media && media.publicId) {
+        const safeFilename = path.basename(media.publicId as string);
+        const privateFilePath = path.join(process.cwd(), "storage", "uploads", safeFilename);
+        const publicFilePath = path.join(process.cwd(), "public", "uploads", safeFilename);
+        if (fs.existsSync(privateFilePath)) {
+          fs.unlinkSync(privateFilePath);
+        } else if (fs.existsSync(publicFilePath)) {
+          fs.unlinkSync(publicFilePath);
+        }
+      }
+    }
+
+    const updateDoc: any = { updatedAt: new Date() };
+    if (status) updateDoc.status = status;
+    if (displayDuration !== undefined) updateDoc.displayDuration = Number(displayDuration);
 
     await db.collection("media").updateOne(
       { _id: objectId },
-      { $set: { status, updatedAt: new Date() } }
+      { $set: updateDoc }
     );
 
     const rawMedia = await db.collection("media").findOne({ _id: objectId });
@@ -79,9 +107,10 @@ export async function PATCH(
 // DELETE /api/media/[id] - Delete media (librarian or admin)
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const user = await getUser();
     if (!user) {
       return NextResponse.json(
@@ -90,21 +119,36 @@ export async function DELETE(
       );
     }
 
-    if (user.role !== "LIBRARIAN" && user.role !== "ADMIN") {
-      return NextResponse.json(
-        { success: false, error: "Only librarians can delete media" },
-        { status: 403 }
-      );
-    }
-
     const db = await getDb();
-    const objectId = new ObjectId(params.id);
+    const objectId = new ObjectId(id);
     const media = await db.collection("media").findOne({ _id: objectId });
 
     if (!media) {
       return NextResponse.json(
         { success: false, error: "Media not found" },
         { status: 404 }
+      );
+    }
+
+    // Role-based access control
+    if (user.role === "STAFF") {
+      // Staff can only delete their own PENDING media
+      if (media.userId !== user.userId) {
+        return NextResponse.json(
+          { success: false, error: "You can only delete your own media" },
+          { status: 403 }
+        );
+      }
+      if (media.status !== "PENDING") {
+        return NextResponse.json(
+          { success: false, error: "Only pending media can be deleted by staff" },
+          { status: 403 }
+        );
+      }
+    } else if (user.role !== "LIBRARIAN" && user.role !== "ADMIN") {
+      return NextResponse.json(
+        { success: false, error: "Insufficient permissions" },
+        { status: 403 }
       );
     }
 

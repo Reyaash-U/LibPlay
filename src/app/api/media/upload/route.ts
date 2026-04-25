@@ -1,12 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getUser } from "@/lib/auth";
+import { getUser, isValidOrigin } from "@/lib/auth";
 import { getDb, ObjectId } from "@/lib/mongodb";
 import crypto from "crypto";
 import { promises as fs, existsSync } from "fs";
 import path from "path";
 
+export const dynamic = "force-dynamic";
+export const maxDuration = 300; // 5 minutes
+
+// POST /api/media/upload — Upload a new media file (staff / librarian)
 export async function POST(request: NextRequest) {
   try {
+    // Security check: only allow requests from this website
+    if (!isValidOrigin(request)) {
+      return NextResponse.json(
+        { success: false, error: "Access denied: External requests not allowed" },
+        { status: 403 }
+      );
+    }
     const user = await getUser();
     if (!user) {
       return NextResponse.json(
@@ -68,55 +79,44 @@ export async function POST(request: NextRequest) {
     // ────────────────────────────────────────────────────────────────
     const storageServerUrl = process.env.STORAGE_SERVER_URL;
     const storageSecret = process.env.STORAGE_SECRET;
-    const isVercel = process.env.VERCEL === "1";
-    let fileUrl: string = "";
+    const preferLocalStorage = process.env.PREFER_LOCAL_STORAGE === "true";
+    let fileUrl: string;
 
-    // ── 1. Save directly to private local storage (if not on Vercel) ──
-    if (!isVercel) {
+    if (!preferLocalStorage && storageServerUrl && storageSecret) {
+      // ── VERCEL MODE ── forward file to the college storage server ──
+      const forwardForm = new FormData();
+      forwardForm.append("filename", filename); // pre-determined filename
+      forwardForm.append(
+        "file",
+        new Blob([buffer], { type: file.type }),
+        filename
+      );
+
+      const response = await fetch(`${storageServerUrl}/api/storage/accept`, {
+        method: "POST",
+        headers: { "X-Storage-Secret": storageSecret },
+        body: forwardForm,
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`College storage server rejected the file: ${errText}`);
+      }
+
+      // File lives on the college server — stream URL points there
+      fileUrl = `${storageServerUrl}/api/media/stream?filename=${filename}`;
+    } else {
+      // ── COLLEGE SERVER MODE ── save directly to private local storage ──
       const uploadsDir = path.join(process.cwd(), "storage", "uploads");
       if (!existsSync(uploadsDir)) {
         await fs.mkdir(uploadsDir, { recursive: true });
       }
       const filePath = path.join(uploadsDir, filename);
       await fs.writeFile(filePath, buffer);
-      
-      const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "";
-      fileUrl = `${baseUrl}/api/media/stream?filename=${filename}`;
-    }
 
-    // ── 2. Forward file to the central remote server ──
-    if (storageServerUrl && storageSecret) {
-      try {
-        const forwardForm = new FormData();
-        forwardForm.append("filename", filename);
-        forwardForm.append(
-          "file",
-          new Blob([buffer], { type: file.type }),
-          filename
-        );
-
-        const response = await fetch(`${storageServerUrl}/api/storage/accept`, {
-          method: "POST",
-          headers: { "X-Storage-Secret": storageSecret },
-          body: forwardForm,
-        });
-
-        if (!response.ok) {
-          const errText = await response.text();
-          console.error("Storage server rejected the file:", errText);
-          if (isVercel) throw new Error(`College storage server rejected the file. ${errText}`);
-        }
-      } catch (err) {
-        console.error("Storage forwarding error:", err);
-        if (isVercel) throw new Error("Failed to reach college storage server. Is it online?");
-      }
-
-      // If on Vercel, the file ONLY lives on the remote server
-      if (isVercel) {
-        fileUrl = `${storageServerUrl}/api/media/stream?filename=${filename}`;
-      }
-    } else if (isVercel) {
-      throw new Error("STORAGE_SERVER_URL is not configured. Cannot save file.");
+      // Use relative URL to avoid breaking on different base URLs or ngrok tunnels
+      // When stored locally, the browser can fetch via relative path
+      fileUrl = `/api/media/stream?filename=${filename}`;
     }
 
     // Save metadata + file URL to MongoDB
