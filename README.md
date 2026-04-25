@@ -6,24 +6,17 @@ What began as a simple need became a complete digital media workflow. Staff can 
 
 LibPlay is a role-based media platform designed for speed, control, and clarity, from upload to approval to public display.
 
+## Live link
+[Link](https://resedaceous-jeanelle-simply.ngrok-free.dev)
+    **⚠️ IMPORTANT:** This Link only works when the server is on
+    
 ## Screenshots
-
-Add your project screenshots here.
-
-Suggested captures:
-
-- Login page
-- Staff dashboard
-- Librarian media review panel
-- Fullscreen display carousel
-
-Place image files in `public/screenshots/` and update the paths below:
 
 ```markdown
 ![Login Page](public/screenshots/login-page.png)
 ![Staff Dashboard](public/screenshots/staff-dashboard.png)
-![Librarian Review](public/screenshots/librarian-review.png)
-![Display Carousel](public/screenshots/display-carousel.png)
+![Librarian Review](public/screenshots/lib.png)
+![RBAC](public/screenshots/RBAC.png)
 ```
 
 ## Highlights
