@@ -10,18 +10,20 @@ LibPlay is a role-based media platform designed for speed, control, and clarity,
 [Link](https://resedaceous-jeanelle-simply.ngrok-free.dev)
     **⚠️ IMPORTANT:** This Link only works when the server is on
 
-```markdown
-## Screenshots
 
-![Login Page]<img width="1919" height="1011" alt="login-page" src="https://github.com/user-attachments/assets/1e42215b-98eb-48c5-82c6-ee588140d755" />
+<h2>Screenshots</h2>
 
-![Staff Dashboard]<img width="1919" height="1094" alt="staff-dashboard" src="https://github.com/user-attachments/assets/60e7e67a-fdc7-4e73-8b6d-507efbe1e770" />
+<h3>Login Page</h3>
+<img src="https://github.com/user-attachments/assets/1e42215b-98eb-48c5-82c6-ee588140d755" width="800"/>
 
-![Librarian Review]<img width="1900" height="1036" alt="lib" src="https://github.com/user-attachments/assets/b6f33aad-ee65-4f83-a1af-089698b5c19f" />
+<h3>Staff Dashboard</h3>
+<img src="https://github.com/user-attachments/assets/60e7e67a-fdc7-4e73-8b6d-507efbe1e770" width="800"/>
 
-![RBAC]<img width="1919" height="1039" alt="RBAC" src="https://github.com/user-attachments/assets/9efa62ce-80cc-4e87-94f0-220fad5005cc" />
+<h3>Librarian Review</h3>
+<img src="https://github.com/user-attachments/assets/b6f33aad-ee65-4f83-a1af-089698b5c19f" width="800"/>
 
-```
+<h3>RBAC</h3>
+<img src="https://github.com/user-attachments/assets/9efa62ce-80cc-4e87-94f0-220fad5005cc" width="800"/>
 
 ## Highlights
 
