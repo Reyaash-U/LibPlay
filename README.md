@@ -7,7 +7,7 @@ What began as a simple need became a complete digital media workflow. Staff can 
 LibPlay is a role-based media platform designed for speed, control, and clarity, from upload to approval to public display.
 
 ## Live link
-[Link](https://resedaceous-jeanelle-simply.ngrok-free.dev)
+🌍 **Live Demo:** [Click Here](https://resedaceous-jeanelle-simply.ngrok-free.dev)  
     **⚠️ IMPORTANT:** This Link only works when the server is on
 
 
